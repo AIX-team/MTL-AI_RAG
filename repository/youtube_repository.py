@@ -103,3 +103,92 @@ URL: {content.url}
             print(f"✅ 요약본 저장 완료: {file_path}")
         
         return saved_paths 
+
+    def save_place_details(self, place_details: List[PlaceInfo]) -> List[Document]:
+        """장소 정보를 벡터 DB에 저장"""
+        documents = []
+        
+        for place in place_details:
+            # 위치 정보 추출 및 구조화
+            geometry = place.google_info.get("geometry", {})
+            location = geometry.get("location", {})
+            
+            # 설명에서 유의사항과 추천사항 추출
+            precautions = []
+            recommendations = []
+            if place.description:
+                if "유의 사항:" in place.description:
+                    precautions_part = place.description.split("유의 사항:")[-1].split("-")[0].strip()
+                    precautions.append(precautions_part)
+                if "추천 사항:" in place.description:
+                    recommendations_part = place.description.split("추천 사항:")[-1].split("-")[0].strip()
+                    recommendations.append(recommendations_part)
+            
+            coordinates = None
+            if location and isinstance(location, dict):
+                coordinates = {
+                    "lat": location.get("lat"),
+                    "lng": location.get("lng")
+                }
+            
+            metadata = {
+                # 기본 정보
+                "name": place.name,
+                "source_url": place.source_url,
+                "types": place.types,
+                "main_type": place.types[0] if place.types else "unknown",
+                
+                # 위치 정보
+                "address": place.formatted_address,
+                "coordinates": coordinates,
+                
+                # 장소 설명
+                "creator_review": place.description,  # 크리에이터의 원본 리뷰
+                "official_description": place.official_description,
+                "precautions": precautions,  # 유의사항 목록
+                "recommendations": recommendations,  # 추천사항 목록
+                
+                # 시설 정보
+                "rating": place.rating,
+                "phone": place.phone,
+                "website": place.website,
+                "price_level": place.price_level,
+                "opening_hours": place.opening_hours,
+                
+                # 미디어/리뷰
+                "photos": [photo.url for photo in place.photos] if place.photos else [],
+                "best_review": place.best_review
+            }
+            
+            # 검색 가능한 텍스트 생성
+            searchable_text = f"""
+{place.name}
+{place.official_description or ''}
+{place.formatted_address or ''}
+"""
+            
+            doc = Document(
+                page_content=searchable_text,
+                metadata=metadata
+            )
+            documents.append(doc)
+        
+        # Chroma DB에 저장
+        self.vectordb.add_documents(documents)
+        
+        return documents 
+
+    def search_content(self, query: str, limit: int = 5) -> List[Dict]:
+        """벡터 DB에서 콘텐츠 검색"""
+        results = self.vectordb.similarity_search_with_score(query, k=limit)
+        
+        search_results = []
+        for doc, score in results:
+            result = {
+                "content": doc.page_content,
+                "metadata": doc.metadata,
+                "similarity_score": score
+            }
+            search_results.append(result)
+        
+        return search_results 

@@ -145,75 +145,6 @@ class ContentService:
         else:
             return YouTubeSubtitleService._get_text_from_webpage(url)
 
-    # @staticmethod
-    # def _get_naver_blog_content(url: str) -> str:
-    #     """네이버 블로그 컨텐츠 추출 (선택자 수정 예시)"""
-    #     # try:
-    #     #     headers = {
-    #     #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    #     #     }
-    #     #     response = requests.get(url, headers=headers)
-    #     #     soup = BeautifulSoup(response.text, 'html.parser')
-            
-    #     #     # 1. iframe 존재 여부 확인 (PC 버전의 경우)
-    #     #     iframe = soup.find('iframe', id='mainFrame')
-    #     #     if iframe and iframe.get('src'):
-    #     #         real_url = f"https://blog.naver.com{iframe['src']}"
-    #     #         response = requests.get(real_url, headers=headers)
-    #     #         soup = BeautifulSoup(response.text, 'html.parser')
-            
-    #     #     # 2. 본문 컨텐츠를 포함하는 태그 선택 (예시: 'div.se-main-container' 또는 'div#postViewArea')
-    #     #     content = soup.find('div', {'class': 'se-main-container'})
-    #     #     if not content:
-    #     #         content = soup.find('div', {'id': 'postViewArea'})
-    #     #     if not content:
-    #     #         return "컨텐츠를 찾을 수 없습니다."
-            
-    #     #     # 불필요한 태그 제거
-    #     #     for element in content.find_all(['script', 'style']):
-    #     #         element.decompose()
-            
-    #     #     text = content.get_text(separator='\n').strip()
-    #     #     return text
-    #     # except Exception as e:
-    #     #     print(f"네이버 블로그 컨텐츠 추출 실패: {e}")
-    #     #     return "컨텐츠 추출 실패"
-    #     options = Options()
-    #     options.add_argument('--headless')  # 창 없이 실행
-    #     options.add_argument('--disable-gpu')
-    #     options.add_argument('--no-sandbox')
-        
-    #     # ChromeDriver의 경로가 필요합니다. PATH에 추가되어 있다면 생략 가능.
-    #     driver = webdriver.Chrome(options=options)
-    #     driver.get(url)
-        
-    #     # 페이지 로딩을 기다림 (필요에 따라 대기 시간 조정)
-    #     time.sleep(3)
-        
-    #     # PC 버전 네이버 블로그의 경우 iframe이 있을 수 있으므로 전환
-    #     try:
-    #         driver.switch_to.frame("mainFrame")
-    #     except Exception as e:
-    #         print("iframe 전환 실패 (없을 수도 있음):", e)
-        
-    #     html = driver.page_source
-    #     driver.quit()
-        
-    #     soup = BeautifulSoup(html, 'html.parser')
-        
-    #     # 본문 컨텐츠 선택 (예: 'div.se-main-container' 또는 'div#postViewArea')
-    #     content = soup.find('div', {'class': 'se-main-container'})
-    #     if not content:
-    #         content = soup.find('div', {'id': 'postViewArea'})
-    #     if not content:
-    #         return "컨텐츠를 찾을 수 없습니다."
-        
-    #     for tag in content.find_all(['script', 'style']):
-    #         tag.decompose()
-        
-    #     text = content.get_text(separator='\n').strip()
-    #     return text
-
     @staticmethod
     def _get_naver_blog_content(url: str) -> str:
         """네이버 블로그에서 본문을 가져오는 함수 (불필요한 개행 및 공백, 광고 제거 포함)"""
@@ -268,8 +199,6 @@ class ContentService:
             raise HTTPException(status_code=500, detail=f"블로그 데이터를 가져오는 중 오류 발생: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"처리 중 오류 발생: {str(e)}")
-
-
 
     @staticmethod
     def _get_tistory_blog_content(url: str) -> str:
@@ -467,6 +396,15 @@ class YouTubeService:
                         place_id = place['place_id']
                         details = self.gmaps.place(place_id, language='ko')['result']
                         
+                        # 장소 타입 로깅 추가
+                        types = details.get('types', [])
+                        print(f"장소 '{place_name}'의 타입: {types}")
+                        
+                        # OpenAI로 장소 설명 생성
+                        official_description = self._get_place_description_from_openai(place_name, types[0] if types else '정보 없음')
+                        if official_description:
+                            place_info.official_description = official_description
+                        
                         # 추가 정보 업데이트
                         place_info.formatted_address = details.get('formatted_address')
                         place_info.rating = details.get('rating')
@@ -475,7 +413,7 @@ class YouTubeService:
                         place_info.price_level = details.get('price_level')
                         place_info.opening_hours = details.get('opening_hours', {}).get('weekday_text')
                         place_info.google_info = details
-                        
+                        place_info.types = types  # 타입 정보 설정
                         # 사진 URL 추가
                         if 'photos' in details:
                             photo_ref = details['photos'][0]['photo_reference']
@@ -546,6 +484,11 @@ class YouTubeService:
                         place = places_result['results'][0]
                         place_id = place['place_id']
                         details = self.gmaps.place(place_id, language='ko')['result']
+                        
+                        # OpenAI로 장소 설명 생성
+                        official_description = self._get_place_description_from_openai(place_name, details.get('types', ['정보 없음'])[0])
+                        if official_description:
+                            place_info.official_description = official_description
                         
                         # 추가 정보 업데이트
                         place_info.formatted_address = details.get('formatted_address')
@@ -633,13 +576,39 @@ URL: {info.url}"""
 {idx}. {place.name}
 {'='*50}
 
-[유튜버의 리뷰]
-장소설명: {place.description or '장소 설명을 찾을 수 없습니다.'}
-"""
+[유튜버의 리뷰]"""
+            
+            # 설명에서 "방문한 장소:" 부분 제거
+            description = place.description or '장소 설명을 찾을 수 없습니다.'
+            if "방문한 장소:" in description:
+                # "방문한 장소:" 이후의 첫 번째 "-" 또는 "타임스탬프:" 이전까지의 텍스트 제거
+                parts = description.split(" - ", 1)
+                if len(parts) > 1:
+                    description = parts[1].strip()
+            
+            # 설명과 추천사항 분리
+            if " - 추천 사항:" in description:
+                desc_parts = description.split(" - 추천 사항:", 1)
+                description = desc_parts[0].strip()
+                recommendations = desc_parts[1].strip()
+                final_result += f"""
+장소설명: {description}
+
+[추천 사항]
+{recommendations}"""
+            else:
+                final_result += f"""
+장소설명: {description}"""
+
             # 구글 장소 정보가 있는 경우에만 추가
             if place.google_info:
+                
                 final_result += f"""
+
+                [장소 설명]
+{place.official_description or '설명 없음'}
 [구글 장소 정보]
+장소타입: {place.types[0] if place.types and len(place.types) > 0 else '정보 없음'}
 🏠 주소: {place.formatted_address or '정보 없음'}
 ⭐ 평점: {place.rating or 'None'}
 📞 전화: {place.phone or 'None'}
@@ -871,6 +840,33 @@ URL: {info.url}"""
             summaries[content.url] = summary
         
         return summaries
+
+    def _get_place_description_from_openai(self, place_name: str, place_type: str) -> str:
+        """OpenAI를 사용하여 장소에 대한 일반적인 설명 생성"""
+        try:
+            prompt = f"""다음 장소에 대한 간단한 설명을 2-3문장으로 작성해주세요:
+장소: {place_name}
+타입: {place_type}
+설명은 객관적이고 정보성 있게 작성해주세요."""
+
+            response = openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 여행 가이드입니다. 장소에 대한 객관적이고 정확한 정보를 제공합니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=200
+            )
+            
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"장소 설명 생성 중 오류 발생: {str(e)}")
+            return None
+
+    def process_place_info(self, place_name: str, timestamp: str, description: str) -> PlaceInfo:
+        """PlaceService의 process_place_info를 호출"""
+        return self.place_service.process_place_info(place_name, timestamp, description)
 
 class YouTubeSubtitleService:
     """YouTube 자막 및 비디오 정보 처리 서비스"""
@@ -1135,8 +1131,13 @@ class TextProcessingService:
 class PlaceService:
     """장소 정보 처리 서비스"""
     
-    @staticmethod
-    def extract_place_names(summary: str) -> List[str]:
+    def __init__(self):
+        self.video_url = None
+
+    def set_video_url(self, url: str):
+        self.video_url = url
+
+    def extract_place_names(self, summary: str) -> List[str]:
         """요약 텍스트에서 장소 이름을 추출"""
         place_names = set()  # 중복 방지를 위해 set 사용
         
@@ -1223,4 +1224,59 @@ class PlaceService:
             
         except Exception as e:
             print(f"[get_place_photo_google] 사진 URL 생성 중 오류 발생: {str(e)}")
+            return None
+
+    def process_place_info(self, place_name: str, timestamp: str, description: str) -> PlaceInfo:
+        """장소 정보를 처리하고 PlaceInfo 객체를 반환"""
+        try:
+            # Google Places API로 장소 정보 가져오기
+            gmaps = googlemaps.Client(key=os.getenv("GOOGLE_PLACES_API_KEY"))
+            places_result = gmaps.places(place_name)
+            
+            if not places_result['results']:
+                return None
+            
+            google_place_info = places_result['results'][0]
+            
+            # 사진 URL 가져오기
+            photo_url = self.get_place_photo_google(place_name)
+            
+            # 장소 타입 확인
+            place_type = google_place_info.get('types', ['unknown'])[0]
+            
+            # OpenAI로 공식 설명 생성
+            official_description = self._get_place_description_from_openai(place_name, place_type)
+            
+            # 영업시간 포맷팅
+            opening_hours = None
+            if google_place_info.get('opening_hours'):
+                opening_hours = google_place_info['opening_hours'].get('weekday_text')
+
+            # PlaceInfo 객체 생성
+            place_info = PlaceInfo(
+                name=place_name,
+                source_url=self.video_url,
+                timestamp=timestamp,
+                description=description,
+                official_description=official_description,
+                formatted_address=google_place_info.get('formatted_address'),
+                coordinates={
+                    'lat': google_place_info['geometry']['location']['lat'],
+                    'lng': google_place_info['geometry']['location']['lng']
+                } if 'geometry' in google_place_info else None,
+                rating=google_place_info.get('rating'),
+                phone=google_place_info.get('formatted_phone_number'),
+                website=google_place_info.get('website'),
+                price_level=google_place_info.get('price_level'),
+                opening_hours=opening_hours,
+                photos=[PlacePhoto(url=photo_url)] if photo_url else None,
+                best_review=google_place_info.get('reviews', [{}])[0].get('text') if google_place_info.get('reviews') else None,
+                google_info=google_place_info,
+                types=google_place_info.get('types')
+            )
+            
+            return place_info
+            
+        except Exception as e:
+            print(f"장소 정보 처리 중 오류 발생: {str(e)}")
             return None
