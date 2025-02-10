@@ -40,7 +40,7 @@ class TravelPlannerService:
             'rating': place.rating
         } for place in places]
         
-        prompt = info2guide_repository.create_travel_prompt(places_dict, plan_type)
+        prompt = info2guide_repository.create_travel_prompt(places_dict, plan_type, days)
         response = await info2guide_repository.get_gpt_response(prompt)
         
         if not response or 'days' not in response:
