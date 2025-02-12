@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers.youtube_router import router as youtube_router
 from routers.testrouters import router as test_router  
 from routers.info2guide_router import router as info2guide_router
+from routers.youtube_subtitle_router import router as youtube_subtitle_router
 
 app = FastAPI(
     title="YouTube Info Extractor API",
@@ -19,6 +20,7 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(youtube_router, prefix="/api/v1", tags=["YouTube"])
 app.include_router(test_router, prefix="/api/v1", tags=["Test"])  # test 라우터 추가
 app.include_router(info2guide_router, prefix="/api/v1", tags=["Info2Guide"])
+app.include_router(youtube_subtitle_router, prefix="/api/v1/youtube", tags=["YouTube Subtitle"])
 # 정적 파일 서빙
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
