@@ -15,9 +15,6 @@ class ContentRequest(BaseModel):
 
 class ContentInfo(BaseModel):
     url: str
-    title: str
-    author: str
-    platform: ContentType
     published_date: Optional[str] = None
 
 class VideoInfo(BaseModel):
