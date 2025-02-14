@@ -1,9 +1,11 @@
+# repository/info2guide_repository.py
+
 import openai
 from typing import List, Dict
 import json
 
 def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
-    """GPT 프롬프트 생성"""
+    """GPT 프롬프트 생성 (ID와 Address 정보 포함)"""
     total_places = len(places)
     places_per_day = {
         'busy': 4,
@@ -39,21 +41,23 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
      - 이동 시간이 긴 원거리 장소
      - 방문 소요 시간이 너무 짧은 장소
   3. 제외된 장소는 '추천 대체 장소' 목록으로 별도 제공"""
-
+    
     place_details = "\n".join([
         f"Place {i+1}:\n"
-        f"ID: {place.get('id', 'N/A')}\n"  # id 정보 추가
+        f"ID: {place.get('id', 'N/A')}\n"
         f"Name: {place['title']}\n"
         f"Address: {place['address']}\n"
         f"Description: {place['description']}\n"
         f"Type: {place['type']}\n"
         f"Opening Hours: {place['open_hours']}\n"
         f"Image: {place['image']}\n"
-        f"Location: {place['latitude']}, {place['longitude']}\n"  # 위도, 경도 포함
+        f"Location: {place['latitude']}, {place['longitude']}\n"
         for i, place in enumerate(places)
     ])
     
     return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
+
+{balance_guide}
 
 [여행 스타일 정의]
 1. BUSY 스타일:
@@ -127,11 +131,10 @@ Day 2:
 2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
 3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
 4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요."""
-
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
-        # 올바른 메서드: openai.ChatCompletion.create
+        # 올바른 메서드 사용: openai.ChatCompletion.create
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -157,7 +160,6 @@ async def get_gpt_response(prompt: str) -> Dict:
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
         return {'days': []}
-
 def parse_gpt_response(response_text: str) -> Dict:
     """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
     try:
@@ -166,7 +168,7 @@ def parse_gpt_response(response_text: str) -> Dict:
         current_day = None
         current_place = None
         
-        # 마크다운 및 불필요한 기호 제거
+        # 불필요한 기호 제거
         response_text = (response_text.replace('###', '')
                                     .replace('**', '')
                                     .replace('- ', '')
@@ -192,19 +194,17 @@ def parse_gpt_response(response_text: str) -> Dict:
                 current_place = None
                 continue
             
-            # ':'를 포함하는 라인 처리 (키: 값 형태)
+            # ':'가 포함된 라인 처리
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
-                # 새 장소 시작: "Place Name:"이면 새 객체 생성
-                if key == 'place_name':
-                    if current_place and current_day:
-                        current_day['places'].append(current_place)
+                # current_place가 None이면 자동 생성
+                if current_place is None:
                     current_place = {
                         'id': '',
                         'name': '',
-                        'address': '',  # Address 초기화
+                        'address': '',
                         'official_description': '',
                         'reviewer_description': '',
                         'place_type': '',
@@ -215,8 +215,9 @@ def parse_gpt_response(response_text: str) -> Dict:
                         'latitude': '',
                         'longitude': ''
                     }
-                    print(f"Created new place for {value}")
+                    print("Auto-created new place due to missing Place Name trigger.")
                 
+                # 키에 따른 값 할당
                 if key == 'id':
                     current_place['id'] = value
                 elif key == 'place_name':
@@ -259,3 +260,5 @@ def parse_gpt_response(response_text: str) -> Dict:
         print(f"Error parsing GPT response: {str(e)}")
         print(f"Response text: {response_text}")
         return {'days': []}
+
+
