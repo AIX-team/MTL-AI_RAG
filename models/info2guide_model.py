@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class PlaceInfo(BaseModel):
@@ -16,11 +16,13 @@ class PlaceInfo(BaseModel):
     rating: float
 
 class PlaceSelectRequest(BaseModel):
-    travel_days: int
+    travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
 
 class PlaceDetail(BaseModel):
+    id: str
     name: str
+    address: str
     official_description: str
     reviewer_description: str
     place_type: str
