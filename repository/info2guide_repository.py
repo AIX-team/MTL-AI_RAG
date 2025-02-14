@@ -12,7 +12,6 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
     }
     required_places = days * places_per_day[plan_type.lower()]
     
-    # 장소와 일수의 균형 분석
     balance_guide = ""
     if total_places < required_places:
         balance_guide = f"""
@@ -43,13 +42,14 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
 
     place_details = "\n".join([
         f"Place {i+1}:\n"
+        f"ID: {place.get('id', 'N/A')}\n"  # id 정보 추가
         f"Name: {place['title']}\n"
         f"Address: {place['address']}\n"
         f"Description: {place['description']}\n"
         f"Type: {place['type']}\n"
         f"Opening Hours: {place['open_hours']}\n"
         f"Image: {place['image']}\n"
-        f"Location: {place['latitude']}, {place['longitude']}\n"
+        f"Location: {place['latitude']}, {place['longitude']}\n"  # 위도, 경도 포함
         for i, place in enumerate(places)
     ])
     
@@ -103,7 +103,9 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
 다음 형식으로 정확히 응답해주세요:
 
 Day 1:
+ID: [장소 ID]
 Place Name: [장소명]
+Address: [주소]
 Official Description: [공식 설명]
 Reviewer's Description: [방문 포인트]
 Place Type: [장소 유형]
@@ -128,43 +130,43 @@ Day 2:
 
 async def get_gpt_response(prompt: str) -> Dict:
     try:
-        print("Sending request to GPT...")  # 디버깅
+        print("Sending request to GPT...")
+        # 올바른 메서드: openai.ChatCompletion.create
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",  
+            model="gpt-4o-mini",
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": "당신은 일본 여행 전문가입니다. 주어진 장소들을 효율적으로 연결하여 최적의 여행 일정을 만드는 것이 특기입니다."
                 },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=3000,  # 토큰 수 증가
+            max_tokens=3000,
             presence_penalty=0.0,
             frequency_penalty=0.0
         )
         
-        print("Received response from GPT")  # 디버깅
+        print("Received response from GPT")
         content = response.choices[0].message.content
-        print(f"GPT Response Content: {content[:200]}...")  # 응답 내용 일부 출력
+        print(f"GPT Response Content: {content[:200]}...")
         
         parsed_response = parse_gpt_response(content)
-        print(f"Parsed Response: {parsed_response}")  # 파싱된 결과 출력
-        
+        print(f"Parsed Response: {parsed_response}")
         return parsed_response
     except Exception as e:
-        print(f"Error in get_gpt_response: {str(e)}")  # 에러 상세 출력
+        print(f"Error in get_gpt_response: {str(e)}")
         return {'days': []}
 
 def parse_gpt_response(response_text: str) -> Dict:
-    """GPT 응답을 파싱하여 구조화된 데이터로 변환"""
+    """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
     try:
         print("Starting to parse response...")
         days = []
         current_day = None
         current_place = None
         
-        # 마크다운 기호 제거
+        # 마크다운 및 불필요한 기호 제거
         response_text = (response_text.replace('###', '')
                                     .replace('**', '')
                                     .replace('- ', '')
@@ -174,8 +176,8 @@ def parse_gpt_response(response_text: str) -> Dict:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         
         for line in lines:
-            print(f"Processing line: {line}")  # 디버깅
-            
+            print(f"Processing line: {line}")
+            # Day 시작 감지
             if line.lower().startswith('day'):
                 if current_place and current_day:
                     current_day['places'].append(current_place)
@@ -183,25 +185,26 @@ def parse_gpt_response(response_text: str) -> Dict:
                     days.append(current_day)
                 try:
                     day_num = int(''.join(filter(str.isdigit, line)))
-                    current_day = {
-                        'day_number': day_num,
-                        'places': []
-                    }
+                    current_day = {'day_number': day_num, 'places': []}
                     print(f"Created new day: {day_num}")
                 except Exception as e:
                     print(f"Error parsing day number: {e}")
                 current_place = None
                 continue
-                
+            
+            # ':'를 포함하는 라인 처리 (키: 값 형태)
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
+                # 새 장소 시작: "Place Name:"이면 새 객체 생성
                 if key == 'place_name':
                     if current_place and current_day:
                         current_day['places'].append(current_place)
                     current_place = {
+                        'id': '',
                         'name': '',
+                        'address': '',  # Address 초기화
                         'official_description': '',
                         'reviewer_description': '',
                         'place_type': '',
@@ -214,9 +217,12 @@ def parse_gpt_response(response_text: str) -> Dict:
                     }
                     print(f"Created new place for {value}")
                 
-                # 키 매핑
-                if key == 'place_name':
+                if key == 'id':
+                    current_place['id'] = value
+                elif key == 'place_name':
                     current_place['name'] = value
+                elif key == 'address':
+                    current_place['address'] = value
                 elif key == 'official_description':
                     current_place['official_description'] = value
                 elif key == 'reviewer_description' or key == "reviewer's_description":
@@ -225,9 +231,9 @@ def parse_gpt_response(response_text: str) -> Dict:
                     current_place['place_type'] = value
                 elif key == 'rating':
                     current_place['rating'] = value
-                elif key == 'place_image_url' or key == 'image_url':
+                elif key in ['place_image_url', 'image_url']:
                     current_place['image_url'] = value
-                elif key == 'business_time' or key == 'business_hours':
+                elif key in ['business_time', 'business_hours']:
                     current_place['business_hours'] = value
                 elif key == 'website':
                     current_place['website'] = value
@@ -236,13 +242,12 @@ def parse_gpt_response(response_text: str) -> Dict:
                         lat, lon = value.split(',')
                         current_place['latitude'] = lat.strip()
                         current_place['longitude'] = lon.strip()
-                    except:
+                    except Exception as e:
+                        print(f"Error parsing location: {e}")
                         current_place['latitude'] = ''
                         current_place['longitude'] = ''
-                
                 print(f"Set {key} = {value}")
         
-        # 마지막 장소와 일자 처리
         if current_place and current_day:
             current_day['places'].append(current_place)
         if current_day:
@@ -252,5 +257,5 @@ def parse_gpt_response(response_text: str) -> Dict:
         return {'days': days}
     except Exception as e:
         print(f"Error parsing GPT response: {str(e)}")
-        print(f"Response text: {response_text}")  # 전체 응답 출력
-        return {'days': []} 
+        print(f"Response text: {response_text}")
+        return {'days': []}

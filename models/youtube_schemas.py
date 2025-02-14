@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Any
 from enum import Enum
 from pydantic import BaseModel, HttpUrl
 
@@ -15,7 +15,10 @@ class ContentRequest(BaseModel):
 
 class ContentInfo(BaseModel):
     url: str
-    published_date: Optional[str] = None
+    title: Optional[str] = ""
+    author: Optional[str] = ""
+    platform: ContentType
+    published_date: Optional[str] = ""
 
 class VideoInfo(BaseModel):
     url: str
@@ -26,27 +29,27 @@ class PlacePhoto(BaseModel):
     url: str
 
 class PlaceInfo(BaseModel):
-    name: str  # 장소 이름
-    source_url: str  # 장소 정보의 출처 URL
-    timestamp: Optional[str] = None  # 영상에서의 타임스탬프
-    description: Optional[str] = None  # 유튜버의 장소 설명
-    official_description: Optional[str] = None  # 공식/일반적인 장소 설명
-    formatted_address: Optional[str] = None  # 주소
-    coordinates: Optional[Dict[str, float]] = None  # 위도/경도 정보
-    rating: Optional[float] = None  # 평점
-    phone: Optional[str] = None  # 전화번호
-    website: Optional[str] = None  # 웹사이트
-    price_level: Optional[int] = None  # 가격대
-    opening_hours: Optional[List[str]] = None  # 영업시간
-    photos: Optional[List[PlacePhoto]] = None  # 사진 목록
-    best_review: Optional[str] = None  # 베스트 리뷰
-    google_info: Dict = {}  # 구글 장소 정보
-    types: Optional[List[str]] = None  # 장소 유형
-    precautions: Optional[List[str]] = None  # 유의사항 목록
-    recommendations: Optional[List[str]] = None  # 추천사항 목록
+    name: str
+    source_url: str
+    timestamp: Optional[str] = ""
+    description: Optional[str] = ""
+    official_description: Optional[str] = ""
+    formatted_address: Optional[str] = ""
+    coordinates: Optional[Dict[str, float]] = None
+    rating: Optional[float] = 0.0
+    phone: Optional[str] = ""
+    website: Optional[str] = ""
+    price_level: Optional[int] = 0
+    opening_hours: Optional[List[str]] = None
+    photos: Optional[List[PlacePhoto]] = None
+    best_review: Optional[str] = ""
+    google_info: Dict = {}
+    types: Optional[List[str]] = None
+    precautions: Optional[List[str]] = None
+    recommendations: Optional[List[str]] = None
 
 class YouTubeResponse(BaseModel):
-    summary: Dict[str, str]
+    summary: Dict[str, Any]
     content_infos: List[ContentInfo]
     processing_time_seconds: float
     place_details: List[PlaceInfo]
