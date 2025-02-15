@@ -28,14 +28,18 @@ class VideoInfo(BaseModel):
 class PlacePhoto(BaseModel):
     url: str
 
+class PlaceGeometry(BaseModel):
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
 class PlaceInfo(BaseModel):
     name: str
     source_url: str
-    timestamp: Optional[str] = ""
+    type: str = "unknown"
+    geometry: PlaceGeometry = PlaceGeometry(latitude=None, longitude=None)
     description: Optional[str] = ""
     official_description: Optional[str] = ""
     formatted_address: Optional[str] = ""
-    coordinates: Optional[Dict[str, float]] = None
     rating: Optional[float] = 0.0
     phone: Optional[str] = ""
     website: Optional[str] = ""
