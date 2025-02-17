@@ -20,6 +20,15 @@ class AIRecommendRepository:
     async def recommend_places(self, request: AIRecommendRequest) -> AIRecommendResponse:
         try:
             self.logger.info("=== AI 추천 리포지토리 시작 ===")
+            self.logger.info(f"요청 데이터: travelInfoId={request.travelInfoId}, travelDays={request.travelDays}, places={len(request.places)}")
+            
+            if not request.places:
+                self.logger.error("장소 목록이 비어있습니다")
+                return AIRecommendResponse(
+                    success="error",
+                    message="장소 목록이 비어있습니다",
+                    content=[]
+                )
             
             # 1. 장소 정보를 문자열로 변환
             places_info = self._format_places_for_prompt(request.places)
@@ -34,39 +43,47 @@ class AIRecommendRepository:
             
             # 3. OpenAI API 호출
             self.logger.info("OpenAI API 호출 시작")
-            response = await self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": """당신은 여행 계획 전문가입니다. 
-                    당신은 일본 여행 전문가입니다. 사용자가 아래와 같이 일본 내의 여행지를 입력하면, 해당 목록과 연관되어 여행 경험을 더욱 풍부하게 만들어 줄 추천 장소들을 도출해 주세요. 추천 장소를 선정할 때는 아래 기준들을 반드시 고려합니다.
+            try:
+                response = await self.client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": """당신은 여행 계획 전문가입니다. 
+                        당신은 일본 여행 전문가입니다. 사용자가 아래와 같이 일본 내의 여행지를 입력하면, 해당 목록과 연관되어 여행 경험을 더욱 풍부하게 만들어 줄 추천 장소들을 도출해 주세요. 추천 장소를 선정할 때는 아래 기준들을 반드시 고려합니다.
 
-                    문화 및 역사적 중요성
+                        문화 및 역사적 중요성
 
-                    입력된 여행지가 역사적, 문화적으로 의미 있는 지역이라면, 비슷한 역사적 배경이나 전통을 가진 장소를 추천합니다.
-                    자연 경관 및 풍경
+                        입력된 여행지가 역사적, 문화적으로 의미 있는 지역이라면, 비슷한 역사적 배경이나 전통을 가진 장소를 추천합니다.
+                        자연 경관 및 풍경
 
-                    자연경관이나 풍경이 뛰어난 지역이 포함되어 있다면, 유사하게 아름다운 자연을 즐길 수 있는 지역이나 독특한 자연 명소가 있는 곳을 제안합니다.
-                    미식 경험
+                        자연경관이나 풍경이 뛰어난 지역이 포함되어 있다면, 유사하게 아름다운 자연을 즐길 수 있는 지역이나 독특한 자연 명소가 있는 곳을 제안합니다.
+                        미식 경험
 
-                    지역 특유의 음식, 전통 요리, 또는 미식 체험이 중요한 요소라면, 미식 문화가 발달한 다른 지역을 추천합니다.
-                    지리적 접근성 및 인근 관광지
+                        지역 특유의 음식, 전통 요리, 또는 미식 체험이 중요한 요소라면, 미식 문화가 발달한 다른 지역을 추천합니다.
+                        지리적 접근성 및 인근 관광지
 
-                    입력된 장소들이 특정 지역에 몰려 있다면, 가까운 거리에서 이동 가능한 연계 여행지를 고려하여 추천합니다.
-                    계절별 특색
+                        입력된 장소들이 특정 지역에 몰려 있다면, 가까운 거리에서 이동 가능한 연계 여행지를 고려하여 추천합니다.
+                        계절별 특색
 
-                    특정 계절(예: 벚꽃, 단풍, 눈 축제 등)에 맞춘 여행지가 있다면, 계절의 매력을 함께 즐길 수 있는 다른 장소를 제안합니다.
-                    독특한 현지 체험
+                        특정 계절(예: 벚꽃, 단풍, 눈 축제 등)에 맞춘 여행지가 있다면, 계절의 매력을 함께 즐길 수 있는 다른 장소를 제안합니다.
+                        독특한 현지 체험
 
-                    지역 축제, 전통 공예, 혹은 특색 있는 체험 활동이 중요한 경우, 그러한 경험을 할 수 있는 장소를 함께 고려합니다.
-                    관광객 평판 및 숨은 명소
+                        지역 축제, 전통 공예, 혹은 특색 있는 체험 활동이 중요한 경우, 그러한 경험을 할 수 있는 장소를 함께 고려합니다.
+                        관광객 평판 및 숨은 명소
 
-                    잘 알려진 명소와 더불어, 관광객 평판이 우수하지만 상대적으로 덜 알려진 숨은 보석 같은 장소도 균형 있게 포함합니다. """},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=2000
-            )
-            self.logger.info("OpenAI API 호출 완료")
+                        잘 알려진 명소와 더불어, 관광객 평판이 우수하지만 상대적으로 덜 알려진 숨은 보석 같은 장소도 균형 있게 포함합니다."""},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=2000
+                )
+                self.logger.info("OpenAI API 호출 완료")
+            except Exception as api_error:
+                self.logger.error(f"OpenAI API 호출 실패: {str(api_error)}")
+                return AIRecommendResponse(
+                    success="error",
+                    message=f"OpenAI API 호출 실패: {str(api_error)}",
+                    content=[]
+                )
             
             # 4. AI 응답 파싱 및 장소 목록 생성
             self.logger.info("AI 응답 파싱 시작")
@@ -74,6 +91,15 @@ class AIRecommendRepository:
                 response.choices[0].message.content,
                 request.places
             )
+            
+            if not recommended_places:
+                self.logger.warning("추천된 장소가 없습니다")
+                return AIRecommendResponse(
+                    success="error",
+                    message="추천된 장소가 없습니다",
+                    content=[]
+                )
+            
             self.logger.info(f"파싱된 추천 장소 수: {len(recommended_places)}")
             
             return AIRecommendResponse(
@@ -90,7 +116,7 @@ class AIRecommendRepository:
             
             return AIRecommendResponse(
                 success="error",
-                message=str(e),
+                message=f"AI 추천 처리 중 오류 발생: {str(e)}",
                 content=[]
             )
 

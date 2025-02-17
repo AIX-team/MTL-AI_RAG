@@ -20,13 +20,14 @@ class AIRecommendService:
         """
         try:
             self.logger.info("=== AI 추천 서비스 시작 ===")
+            self.logger.info(f"요청 정보: travelInfoId={request.travelInfoId}, travelDays={request.travelDays}")
             
             # 1. 입력값 검증
             if not request.places:
                 self.logger.error("장소 목록이 비어있습니다.")
                 return AIRecommendResponse(
                     success="error",
-                    message="No places provided for recommendation",
+                    message="장소 목록이 비어있어 추천을 할 수 없습니다.",
                     content=[]
                 )
             
@@ -34,7 +35,7 @@ class AIRecommendService:
                 self.logger.error(f"잘못된 여행 일수: {request.travelDays}")
                 return AIRecommendResponse(
                     success="error",
-                    message="Invalid travel days",
+                    message="여행 일수는 1일 이상이어야 합니다.",
                     content=[]
                 )
             
@@ -44,14 +45,18 @@ class AIRecommendService:
             # 2. 리포지토리에 추천 요청
             self.logger.info("AI 추천 리포지토리 호출 시작")
             response = await self.repository.recommend_places(request)
-            self.logger.info("AI 추천 리포지토리 호출 완료")
+            self.logger.info(f"AI 추천 리포지토리 응답: success={response.success}, message={response.message}")
             
             # 3. 결과 검증 및 반환
+            if response.success != "success":
+                self.logger.warning(f"추천 실패: {response.message}")
+                return response
+            
             if not response.content:
                 self.logger.warning("추천된 장소가 없습니다.")
                 return AIRecommendResponse(
                     success="error",
-                    message="Failed to generate recommendations",
+                    message="추천 장소를 생성하지 못했습니다.",
                     content=[]
                 )
             
@@ -69,6 +74,6 @@ class AIRecommendService:
             
             return AIRecommendResponse(
                 success="error",
-                message=f"Error in recommendation service: {str(e)}",
+                message=f"AI 추천 서비스 처리 중 오류 발생: {str(e)}",
                 content=[]
             ) 
