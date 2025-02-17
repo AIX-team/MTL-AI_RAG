@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+# models/info2guide_model.py
+
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class PlaceInfo(BaseModel):
@@ -11,16 +13,18 @@ class PlaceInfo(BaseModel):
     image: str
     latitude: float
     longitude: float
-    open_hours: str
-    phone: str
-    rating: float
+    open_hours:  Optional[str] = None  # Optional 필드로 변경
+    phone: Optional[str] = None  # Optional 필드로 변경
+    rating: Optional[float] = None  # rating도 Optional로 변경 가능
 
 class PlaceSelectRequest(BaseModel):
-    travel_days: int
+    travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
 
 class PlaceDetail(BaseModel):
+    id: str
     name: str
+    address: str
     official_description: str
     reviewer_description: str
     place_type: str

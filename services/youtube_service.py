@@ -13,7 +13,7 @@ import openai
 from googleapiclient.discovery import build
 import googlemaps
 from typing import List, Dict, Tuple, Any
-from models.youtube_schemas import YouTubeResponse, VideoInfo, PlaceInfo, PlacePhoto, ContentType, ContentInfo
+from models.youtube_schemas import YouTubeResponse, VideoInfo, PlaceInfo, PlacePhoto, ContentType, ContentInfo, PlaceGeometry
 from repository.youtube_repository import YouTubeRepository
 from langchain.schema import Document
 from urllib.parse import urlparse, parse_qs
@@ -382,38 +382,36 @@ class YouTubeService:
             for place_name in place_names:
                 try:
                     # Google Places API로 장소 정보 검색
-                    place_info = PlaceInfo(
-                        name=place_name,
-                        source_url=source_url,  # source_url 추가
-                        description=self._extract_place_description(summary, place_name),
-                        google_info={}  # 기본값으로 빈 딕셔너리 설정
-                    )
-                    
-                    # Google Places API 검색 시도
-                    places_result = self.gmaps.places(place_name, language='ja', region='jp')
+                    places_result = self.gmaps.places(place_name)
                     if places_result['results']:
                         place = places_result['results'][0]
                         place_id = place['place_id']
                         details = self.gmaps.place(place_id, language='ko')['result']
                         
-                        # 장소 타입 로깅 추가
-                        types = details.get('types', [])
-                        print(f"장소 '{place_name}'의 타입: {types}")
+                        # 장소 타입과 좌표 정보 추출
+                        place_type = details.get('types', ['unknown'])[0]
+                        location = details.get('geometry', {}).get('location', {})
+                        geometry = PlaceGeometry(
+                            latitude=location.get('lat'),
+                            longitude=location.get('lng')
+                        )
                         
-                        # OpenAI로 장소 설명 생성
-                        official_description = self._get_place_description_from_openai(place_name, types[0] if types else '정보 없음')
-                        if official_description:
-                            place_info.official_description = official_description
+                        place_info = PlaceInfo(
+                            name=place_name,
+                            source_url=source_url,
+                            type=place_type,  # 장소 타입 설정
+                            geometry=geometry,  # geometry 정보 설정
+                            description=self._extract_place_description(summary, place_name),
+                            official_description=self._get_place_description_from_openai(place_name, place_type),  # official_description 설정
+                            formatted_address=details.get('formatted_address'),
+                            rating=details.get('rating'),
+                            phone=details.get('formatted_phone_number'),
+                            website=details.get('website'),
+                            price_level=details.get('price_level'),
+                            opening_hours=details.get('opening_hours', {}).get('weekday_text'),
+                            google_info=details
+                        )
                         
-                        # 추가 정보 업데이트
-                        place_info.formatted_address = details.get('formatted_address')
-                        place_info.rating = details.get('rating')
-                        place_info.phone = details.get('formatted_phone_number')
-                        place_info.website = details.get('website')
-                        place_info.price_level = details.get('price_level')
-                        place_info.opening_hours = details.get('opening_hours', {}).get('weekday_text')
-                        place_info.google_info = details
-                        place_info.types = types  # 타입 정보 설정
                         # 사진 URL 추가
                         if 'photos' in details:
                             photo_ref = details['photos'][0]['photo_reference']
