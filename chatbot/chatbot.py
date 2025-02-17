@@ -10,6 +10,7 @@ import openai
 from dotenv import load_dotenv
 from datetime import datetime
 from fastapi.encoders import jsonable_encoder
+from config import path_config
 
 
 # .env 파일 로드
@@ -21,7 +22,7 @@ if not openai_api_key:
     raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
 # Chroma DB 경로
-CHROMA_DB_PATH = r"C:\Users\201-3\Desktop\conversation\main\MTL-AI_RAG\chroma_db"
+CHROMA_DB_PATH = path_config.CHROMA_DB_PATH
 
 class ChatMessage(BaseModel):
     message: str
@@ -466,9 +467,27 @@ class ChatBot:
                 print(f"응답: {qa_result.get('result', '없음')}")
                 print(f"소스 문서: {qa_result.get('source_documents', '없음')}")
                 
-                if qa_result["result"].strip() and len(qa_result["result"].split()) >= 10:
+                # 부정적인 응답 패턴 확인
+                negative_patterns = [
+                    "죄송",
+                    "제공된 정보에는",
+                    "관련 정보가 없습니다",
+                    "찾을 수 없습니다",
+                    "알 수 없습니다",
+                    "정보가 부족합니다"
+                ]
+                
+                result = qa_result["result"].strip()
+                
+                # 응답이 있고 길이가 충분하며 부정적이지 않은 경우에만 반환
+                if (result and 
+                    len(result.split()) >= 10 and 
+                    not any(pattern in result for pattern in negative_patterns)):
                     print("\n=== QA 체인 응답 반환 ===")
-                    return {"response": qa_result["result"], "source": "qa_chain"}
+                    return {"response": result, "source": "qa_chain"}
+                else:
+                    print("\n=== QA 체인 부정적 응답 감지, 2단계로 진행 ===")
+                    # 2단계로 자연스럽게 진행됨
             except Exception as e:
                 print(f"\nQA 체인 오류: {str(e)}")
             
