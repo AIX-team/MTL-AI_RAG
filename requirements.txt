@@ -37,5 +37,4 @@ beautifulsoup4>=4.12.2
 langdetect>=1.0.9
 
 # 추가된 패키지
-dotenv
 openai
