@@ -10,6 +10,7 @@ from routers.youtube_router import router as youtube_router
 from routers.testrouters import router as test_router  
 from routers.info2guide_router import router as info2guide_router
 from routers.youtube_subtitle_router import router as youtube_subtitle_router
+from routers.ai_recommend_router import router as ai_recommend_router
 from chatbot.chatbot import ChatBot, ChatMessage    #############
 
 load_dotenv() #############
