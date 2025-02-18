@@ -15,14 +15,15 @@ import re
 from langchain.prompts import PromptTemplate
 import aiohttp
 from openai import OpenAI
+import anthropic
 
 # .env 파일 로드
 load_dotenv()
 
 # OpenAI API Key를 환경 변수에서 가져오기
 openai_api_key = os.getenv("OPENAI_API_KEY")
-# Perplexity API Key를 환경 변수에서 가져오기
-perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
+# claude API Key를 환경 변수에서 가져오기
+claude_api_key = os.getenv("CLAUDE_API_KEY")
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
@@ -60,7 +61,7 @@ class ChatBot:
             
             # QA 체인 설정
             self.qa_chain = RetrievalQA.from_chain_type(
-                llm=ChatOpenAI(temperature=0.0, model_name='gpt-4o-mini'),
+                llm=None,
                 retriever=self.retriever,
                 chain_type="stuff",
                 return_source_documents=True,
@@ -84,7 +85,15 @@ class ChatBot:
                             - 여행 경비, 비용
                             - 여행 일정, 코스
                             - 날씨, 복장
-                            - 안전, 주의사항
+                            - 안전, 주의사항                            
+
+                            [응답 예시]
+                            "네, 가와사키 추천 여행지 알려드릴게요! 
+                            가와사키 다이시 히라마지는 유명한 불교 사찰이에요. 
+                            요미우리 랜드는 일본 최대급 놀이공원이구요. 
+                            밤에는 가와사키 공업지대의 멋진 야경도 볼 수 있어요. 
+                            라 치타 델라에서 쇼핑하고, 후지코 F. 후지오 박물관에서 도라에몽도 만나보세요!"
+
 
                             [방어 응답 - 다른 답변 금지]
                             여행 관련이 아닌 모든 질문에는 오직 아래 메시지로만 응답:
@@ -128,7 +137,7 @@ class ChatBot:
             
             # 대화형 체인 설정 수정
             self.chain = ConversationalRetrievalChain.from_llm(
-                llm=ChatOpenAI(temperature=0.7, model_name='gpt-4o-mini'),  # temperature 증가
+                llm=None,  # temperature 증가
                 retriever=self.vectordb.as_retriever(search_kwargs={"k": 3}),
                 return_source_documents=True,
                 combine_docs_chain_kwargs={
@@ -195,10 +204,9 @@ class ChatBot:
             print(f"초기화 중 오류가 발생했습니다: {str(e)}")
     
 
-    async def get_perplexity_response(self, message: str) -> str:
-        """OpenAI API를 직접 호출하여 응답을 받습니다."""
+    async def get_claude_response(self, message: str) -> str:
         try:
-            print("Perplexity API 호출 시작")
+            print("Claude API 호출 시작")
             system_prompt = """
                             당신은 한국어를 배우고 있는 현지 가이드입니다.
                             질문한 여행지에 따라 당신의 국적을 파악하여 답변해주세요.
@@ -269,32 +277,31 @@ class ChatBot:
 
                             답변:"""
 
-            # Perplexity API 호출 방식 사용
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ]
+            client = anthropic.Anthropic(api_key=claude_api_key)
 
-            client = OpenAI(api_key=perplexity_api_key, base_url="https://api.perplexity.ai")
-
-            response = client.chat.completions.create(
-                model="sonar",
-                messages=messages,
+            # Claude API 형식에 맞게 메시지 구성
+            response = client.messages.create(
+                model="claude-3-haiku-20240307",
                 max_tokens=500,
-                temperature=0.2,
-                top_p=0.9,
-                frequency_penalty=1,
-                presence_penalty=0,
-                stream=False
+                temperature=0.7,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": message
+                    }
+                ]
             )
 
-            if not response or not response.choices:
+            if not response or not response.content:
                 raise ValueError("API 응답이 유효하지 않습니다")
             
-            return response.choices[0].message.content.strip()
-        except openai.error.APIError as e:
-            print(f"perplexity API 오류: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"perplexity API 오류: {str(e)}")
+            # Claude API 응답 형식에 맞게 수정
+            return response.content[0].text
+
+        except anthropic.APIError as e:
+            print(f"Claude API 오류: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Claude API 오류: {str(e)}")
         except Exception as e:
             print(f"예상치 못한 오류: {str(e)}")
             raise HTTPException(status_code=500, detail="서버 내부 오류가 발생했습니다")
@@ -322,11 +329,20 @@ class ChatBot:
                             - 여행 일정, 코스
                             - 날씨, 복장
                             - 안전, 주의사항
+                            
+
+                            [응답 예시]
+                            "네, 가와사키 추천 여행지 알려드릴게요! 
+                            가와사키 다이시 히라마지는 유명한 불교 사찰이에요. 
+                            요미우리 랜드는 일본 최대급 놀이공원이구요. 
+                            밤에는 가와사키 공업지대의 멋진 야경도 볼 수 있어요. 
+                            라 치타 델라에서 쇼핑하고, 후지코 F. 후지오 박물관에서 도라에몽도 만나보세요!"
+
 
                             [방어 응답 - 다른 답변 금지]
                             여행 관련이 아닌 모든 질문에는 오직 아래 메시지로만 응답:
                             "죄송합니다~ 저는 여행 관련 질문에만 답변할 수 있어요. 여행에 대해서 물어봐 주세요! (＾▽＾)"
-
+                    
                             [판단 기준]
                             1. 기술, 프로그래밍, 개발 관련 = 여행 무관
                             2. 일상생활 질문 = 여행 무관
@@ -777,8 +793,8 @@ class ChatBot:
                         }
                     else:
                         return {
-                            "response": await self.get_perplexity_response(message),
-                            "source": "perplexity_fallback"
+                            "response": await self.get_claude_response(message),
+                            "source": "claude_fallback"
                         }
             
             else:  # QA chain
@@ -800,8 +816,8 @@ class ChatBot:
                         }
                     else:
                         return {
-                            "response": await self.get_perplexity_response(message),
-                            "source": "perplexity_fallback"
+                            "response": await self.get_claude_response(message),
+                            "source": "claude_fallback"
                         }
                     
         except Exception as e:
@@ -843,7 +859,7 @@ class ChatBot:
                         self.openai_health = False
                         print("OpenAI 상태 확인 실패")
 
-            return not self.openai_health
+            return self.openai_health
             
         except Exception as e:
             print(f"헬스체크 오류: {str(e)}")
@@ -879,7 +895,7 @@ chatbot = ChatBot()
 #         print(f"   OpenAI 상태: {'정상' if health_check else '비정상'}")
         
 #         # 적절한 LLM으로 응답 생성
-#         print(f"3. {'OpenAI' if health_check else 'Perplexity'} LLM으로 응답 생성 중...")
+#         print(f"3. {'OpenAI' if health_check else 'claude'} LLM으로 응답 생성 중...")
 #         response = await chatbot.chat(chat_data, health_check)
         
 #         print("=== 채팅 API 요청 완료 ===\n")
