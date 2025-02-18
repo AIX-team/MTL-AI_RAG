@@ -28,24 +28,21 @@ class YouTubeRepository:
         """벡터 DB에 최종 요약 저장"""
         try:
             documents = []
-            
             for content in content_infos:
-                if content.url in final_summaries:
-                    summary = final_summaries[content.url]
-                    metadata = {
-                        "url": content.url,
-                        "title": content.title,
-                        "author": content.author,
-                        "platform": content.platform.value,
-                        "type": "summary"
-                    }
-                    documents.append(Document(page_content=summary, metadata=metadata))
+                # final_summaries에 해당 URL의 요약이 없으면 기본값 사용
+                summary = final_summaries.get(content.url, "요약 정보 없음")
+                metadata = {
+                    "url": content.url,
+                    "title": content.title,
+                    "author": content.author,
+                    "platform": content.platform.value,
+                    "type": "summary"
+                }
+                documents.append(Document(page_content=summary, metadata=metadata))
             
-            # 벡터 DB에 저장
-            if documents:
-                self.vectordb.add_documents(documents)
-                print(f"✅ 벡터 DB 저장 완료: {len(documents)}개 문서")
-            
+            # 벡터 DB에 저장 (빈 리스트여도 add_documents 호출)
+            self.vectordb.add_documents(documents)
+            print(f"✅ 벡터 DB 저장 완료: {len(documents)}개 문서")
         except Exception as e:
             print(f"벡터 DB 저장 중 오류 발생: {str(e)}")
             raise Exception(f"벡터 DB 저장 중 오류가 발생했습니다: {str(e)}")

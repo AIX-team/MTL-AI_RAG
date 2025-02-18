@@ -1,0 +1,85 @@
+=== YOUTUBE 콘텐츠 요약 ===
+URL: https://www.youtube.com/watch?v=FXJxCMgW6SI
+제목: 부산에서 화물선 타고 일본 가기 【일본1】
+작성자: 빠니보틀 Pani Bottle
+==================================================
+
+=== 여행 정보 요약 ===
+처리 시간: 37.38초
+
+분석한 영상:
+==================================================
+제목: 부산에서 화물선 타고 일본 가기 【일본1】
+채널: 빠니보틀 Pani Bottle
+URL: https://www.youtube.com/watch?v=FXJxCMgW6SI
+==================================================
+
+=== 장소별 상세 정보 ===
+
+1. 부산
+==================================================
+
+[유튜버의 리뷰]
+장소설명: 장소설명: 유튜버는 부산으로 가기 위해 서울역에서 기차를 탔습니다. 부산은 한국의 대표적인 항구 도시로, 바다와 해산물 요리로 유명합니다.
+
+                [장소 설명]
+부산은 대한민국의 제2의 도시로, 동해안에 위치한 주요 항구 도시입니다. 이곳은 아름다운 해변, 세계적으로 유명한 자갈치 시장, 그리고 부산국제영화제로 잘 알려져 있습니다. 또한, 다양한 문화와 역사적 유적지가 혼합된 매력적인 도시로, 관광과 산업의 중심지 역할을 하고 있습니다.
+[구글 장소 정보]
+장소타입: locality
+🏠 주소: 대한민국 부산광역시
+⭐ 평점: None
+📞 전화: None
+🌐 웹사이트: None
+💰 가격대: 정보 없음
+⏰ 영업시간:
+정보 없음
+
+[사진 및 리뷰]
+📸 사진 1: https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=AVzFdbmTfOtw_9NBSIhCuObZvLM8dUPnUCi2etXW-PL6xLkldz8GmMeny3JHXOumCcud1FgM4zEUMLmkO7puU6tvrg2Smv1oz0dyh3gMuYl6Gc0Ag38f-gEqI6bPLSBWyrGRkrMTwomoQ7_ZhMzl4-cXAaMqy3M3KzYfrnarDXxfRHSENEzI&key=AIzaSyCHWJhqM_JjkY8A777RKgf1R-slD_tDh_k
+⭐ 베스트 리뷰: 리뷰 없음
+==================================================
+2. 시즈오카
+==================================================
+
+[유튜버의 리뷰]
+장소설명: 장소설명: 유튜버는 부산에서 화물선을 타고 일본의 시즈오카로 가는 계획을 세웠습니다. 시즈오카는 후지산이 위치한 지역으로, 아름다운 자연경관과 차 문화로 유명합니다.
+
+                [장소 설명]
+시즈오카(Shizuoka)는 일본의 주부 지방에 위치한 현(県)으로, 후지산의 북쪽 기슭에 자리잡고 있습니다. 이 지역은 아름다운 자연 경관과 함께 녹차 생산으로 유명하며, 다양한 관광 명소와 온천이 있습니다. 또한, 시즈오카는 해안선이 길어 해양 활동과 신선한 해산물 요리로도 잘 알려져 있습니다.
+[구글 장소 정보]
+장소타입: administrative_area_level_1
+🏠 주소: 일본 시즈오카현
+⭐ 평점: None
+📞 전화: None
+🌐 웹사이트: None
+💰 가격대: 정보 없음
+⏰ 영업시간:
+정보 없음
+
+[사진 및 리뷰]
+📸 사진 1: https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=AVzFdbk-SGKl8cxptVLDdIiHVpD_PhHZ4h2t8biHqbEIIVgQeWtILdW6hKZUl6iKTG6poLLxwkWNj2s2ueQTQKKUv9pC6QS4zBL0I0Huz-H2GXzr_6QnIn1Zyh7_aJ9GdvHi3Nd0qD5HaWooQzBRJInd0xIs3tIM0B8CbswXp76jxKswTvtd&key=AIzaSyCHWJhqM_JjkY8A777RKgf1R-slD_tDh_k
+⭐ 베스트 리뷰: 리뷰 없음
+==================================================
+3. 서울역
+==================================================
+
+[유튜버의 리뷰]
+장소설명: 장소설명: 유튜버는 서울역에서 기차를 타기 위해 방문했습니다. 서울역은 한국의 주요 기차역 중 하나로, 다양한 기차 노선이 연결되어 있어 여행의 출발점으로 많이 이용됩니다.
+
+                [장소 설명]
+서울역은 서울특별시에 위치한 주요 기차역이자 지하철역으로, 서울의 교통 중심지 중 하나입니다. 이 역은 KTX, 일반 기차, 그리고 서울 지하철 1호선과 4호선이 연결되어 있어 수도권과 한국 전역으로의 이동이 용이합니다. 또한, 상업 시설과 편의 시설이 잘 갖춰져 있어 여행객들에게 편리한 서비스가 제공됩니다.
+[구글 장소 정보]
+장소타입: subway_station
+🏠 주소: 대한민국 서울특별시 중구 소공동 세종대로18길 2
+⭐ 평점: 4.3
+📞 전화: None
+🌐 웹사이트: None
+💰 가격대: 정보 없음
+⏰ 영업시간:
+정보 없음
+
+[사진 및 리뷰]
+📸 사진 1: https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=AVzFdbm0MJyUuUSJ2_6HwqKTiH2idMY7poOChYn6EmzHs2F1w7loGfJOhtzJQ6gR5WN7nT6jZzTLJxOgCRgaFWSAaZibR_Sy07Q7AGogjNvIbxcdZyUC3HZVuHcT_zf3_GvUr2lxoXgBnF8bgn6kcfaj0xe4x_JyDiPX2BGMvD4I7m8pcUEe&key=AIzaSyCHWJhqM_JjkY8A777RKgf1R-slD_tDh_k
+⭐ 베스트 리뷰: Gtx 운정방향 개통 으로 서울역 지하철1호선에서
+편안하게 이용할수 있는 대합실과 시발역이 새로생겨 서 아주 조아요
+==================================================

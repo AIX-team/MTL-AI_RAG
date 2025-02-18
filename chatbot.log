@@ -1,0 +1,2 @@
+2025-02-17 12:19:27,055 - chatbot.chatbot - ERROR - 초기화 중 오류: 'ChatBot' object has no attribute 'setup_vectordb'
+2025-02-17 12:22:02,492 - chromadb.telemetry.product.posthog - INFO - Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
