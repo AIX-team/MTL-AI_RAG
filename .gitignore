@@ -1,9 +1,8 @@
-.env
-*.pyc
+# Python
 __pycache__/
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzw
+*.pyc
+venv/
+.env
+.idea/
+.vscode/
+.DS_Store
