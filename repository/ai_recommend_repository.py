@@ -35,7 +35,7 @@ class AIRecommendRepository:
             # 3. OpenAI API 호출
             self.logger.info("OpenAI API 호출 시작")
             response = await self.client.chat.completions.create(
-                model="gpt-4-32k",
+                model="gpt-4-32k-0613",
                 messages=[
                     {"role": "system", "content": """당신은 여행 계획 전문가입니다. 
                     당신은 일본 여행 전문가입니다. 사용자가 아래와 같이 일본 내의 여행지를 입력하면, 해당 목록과 연관되어 여행 경험을 더욱 풍부하게 만들어 줄 추천 장소들을 도출해 주세요. 추천 장소를 선정할 때는 아래 기준들을 반드시 고려합니다.
