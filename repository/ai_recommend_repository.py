@@ -76,6 +76,14 @@ class AIRecommendRepository:
             )
             self.logger.info(f"파싱된 추천 장소 수: {len(recommended_places)}")
             
+            # OpenAI 응답 로깅
+            self.logger.info("=== OpenAI 응답 ===")
+            self.logger.info(f"Raw response: {response.choices[0].message.content[:200]}...")
+            
+            # 파싱 결과 로깅
+            self.logger.info("=== 파싱 결과 ===")
+            self.logger.info(f"Parsed places: {len(recommended_places)}")
+            
             return AIRecommendResponse(
                 success="success",
                 message="Successfully recommended places using AI",

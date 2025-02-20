@@ -19,7 +19,9 @@ class AIRecommendService:
             AIRecommendResponse: 추천된 장소 목록과 처리 결과를 포함한 응답 객체
         """
         try:
-            self.logger.info("=== AI 추천 서비스 시작 ===")
+            self.logger.info("=== AI 서비스 처리 시작 ===")
+            self.logger.info(f"Travel days: {request.travelDays}")
+            self.logger.info(f"Places before processing: {len(request.places)}")
             
             # 1. 입력값 검증
             if not request.places:
@@ -59,6 +61,10 @@ class AIRecommendService:
             self.logger.info("=== AI 추천 서비스 완료 ===")
             
             return response
+            
+        except Exception as e:
+            self.logger.error(f"Service error: {str(e)}")
+            raise
             
         except Exception as e:
             self.logger.error("=== AI 추천 서비스 에러 ===")
