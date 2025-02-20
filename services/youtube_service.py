@@ -780,7 +780,7 @@ URL: {info.url}"""
         """최종 요약을 생성
         다음 조건을 만족하는 장소 정보를 제공해주세요.
 
-1. 장소가 한국이 아니라 일본에 위치한 경우에만 정보를 출력해주세요.
+1. 장소가 한국이 아니라 일본의 어느 지역에 위치한 경우에만 정보를 출력해주세요.
 2. 상호명이 없는 경우, 유튜버가 말한 지역(예: '도쿄') 내에서 해당 카테고리(예: 음식점, 관광지)에 맞는 유명한 곳을 추천해주세요.
 3. '도쿄'처럼 큰 지역이 언급되었을 경우, 가능한 한 구체적인 장소(예: '오다이바 거리', '신주쿠 골든가이')로 세분화하여 정보를 제공해주세요.
 4. 위도 및 경도가 없는 이미지는 제외하거나, 해당 장소에 대한 일반적인 설명을 제공해주세요.
@@ -849,10 +849,11 @@ URL: {info.url}"""
     def _get_place_description_from_openai(self, place_name: str, place_type: str) -> str:
         """OpenAI를 사용하여 장소에 대한 일반적인 설명 생성"""
         try:
-            prompt = f"""다음 장소에 대한 짧고 간결한 소개를 20~30자로 요약해주세요:
+            prompt = f"""다음 장소에 대한 정확하고 간결한 설명을 제공하세요.  
+설명은 10자로 제한되며, 핵심 정보만 포함해야 합니다.
 장소: {place_name}
 타입: {place_type}
-설명은 명확하고 핵심 정보만 포함해주세요."""
+반드시 짧고 명확한 한 문장으로 작성하세요."""
 
             response = openai.chat.completions.create(
                 model="gpt-4o-mini",
@@ -861,7 +862,7 @@ URL: {info.url}"""
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=50
+                max_tokens=30
             )
             
             return response.choices[0].message.content.strip()
