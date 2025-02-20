@@ -777,7 +777,14 @@ URL: {info.url}"""
             }
 
     def generate_final_summary(self, content_infos: List[ContentInfo], processing_time: float, place_details: List[PlaceInfo]) -> Dict[str, str]:
-        """최종 요약을 생성"""
+        """최종 요약을 생성
+        다음 조건을 만족하는 장소 정보를 제공해주세요.
+
+1. 장소가 한국이 아니라 일본에 위치한 경우에만 정보를 출력해주세요.
+2. 상호명이 없는 경우, 유튜버가 말한 지역(예: '도쿄') 내에서 해당 카테고리(예: 음식점, 관광지)에 맞는 유명한 곳을 추천해주세요.
+3. '도쿄'처럼 큰 지역이 언급되었을 경우, 가능한 한 구체적인 장소(예: '오다이바 거리', '신주쿠 골든가이')로 세분화하여 정보를 제공해주세요.
+4. 위도 및 경도가 없는 이미지는 제외하거나, 해당 장소에 대한 일반적인 설명을 제공해주세요.
+5. 중복된 장소는 제거하고, 가장 관련성이 높은 정보만 제공합니다."""
         summaries = {}
         
         for content in content_infos:
@@ -842,19 +849,19 @@ URL: {info.url}"""
     def _get_place_description_from_openai(self, place_name: str, place_type: str) -> str:
         """OpenAI를 사용하여 장소에 대한 일반적인 설명 생성"""
         try:
-            prompt = f"""다음 장소에 대한 간단한 설명을 2-3문장으로 작성해주세요:
+            prompt = f"""다음 장소에 대한 짧고 간결한 소개를 20~30자로 요약해주세요:
 장소: {place_name}
 타입: {place_type}
-설명은 객관적이고 정보성 있게 작성해주세요."""
+설명은 명확하고 핵심 정보만 포함해주세요."""
 
             response = openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "당신은 여행 가이드입니다. 장소에 대한 객관적이고 정확한 정보를 제공합니다."},
+                    {"role": "system", "content": "당신은 일본 전문 여행 가이드입니다. 장소에 대한 객관적이고 정확한 정보를 제공합니다."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=200
+                max_tokens=50
             )
             
             return response.choices[0].message.content.strip()
@@ -1035,6 +1042,8 @@ class TextProcessingService:
 4. 추천 사항만 있는 것들은 추천 사항 섹션에 모아주세요.
 5. 가능한 장소 이름을 알고 있다면 실제 주소를 포함해 주세요.
 7. 본문 내에 언급된 모든 장소 (예: "도쿄 해리포터 스튜디오", "노보리베츠" 등)를 반드시 결과에 포함시켜 주세요.
+8. 주소가 포함된 경우 이를 제외하고, 일본 내 장소만 제공해야 합니다. "야키토리집"이라고만 언급된 경우에는 오사카 내의 야키토리집 중 하나의 주소를 찾아서 제공해 주세요
+9. 아카타 샤브샤브"와 같이 명확한 브랜드명이 언급되지 않은 경우, 지역 내 적합한 샤브샤브집 주소를 찾아서 제공해 주세요.
 
 **결과 형식:**
 
