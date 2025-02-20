@@ -76,19 +76,12 @@ class AIRecommendRepository:
             )
             self.logger.info(f"파싱된 추천 장소 수: {len(recommended_places)}")
             
-            # OpenAI 응답 로깅
-            self.logger.info("=== OpenAI 응답 ===")
-            self.logger.info(f"Raw response: {response.choices[0].message.content[:200]}...")
-            
-            # 파싱 결과 로깅
-            self.logger.info("=== 파싱 결과 ===")
-            self.logger.info(f"Parsed places: {len(recommended_places)}")
-            
             return AIRecommendResponse(
                 success="success",
                 message="Successfully recommended places using AI",
                 content=recommended_places
             )
+            
         except Exception as e:
             self.logger.error("=== AI 추천 리포지토리 에러 ===")
             self.logger.error(f"에러 타입: {type(e).__name__}")
@@ -147,10 +140,21 @@ class AIRecommendRepository:
     def _parse_ai_response(self, ai_response: str, available_places: List[PlaceBase]) -> List[PlaceBase]:
         try:
             self.logger.info("AI 응답 파싱 시작")
-            self.logger.info(f"AI 응답 내용: {ai_response[:200]}...")  # 처음 200자만 로깅
             
-            # AI 응답을 JSON으로 파싱
-            response_data = json.loads(ai_response)
+            # 코드 블록 마커 제거
+            cleaned_response = ai_response
+            if "```json" in cleaned_response:
+                cleaned_response = cleaned_response.split("```json")[1]
+            if "```" in cleaned_response:
+                cleaned_response = cleaned_response.split("```")[0]
+                
+            # 앞뒤 공백 제거
+            cleaned_response = cleaned_response.strip()
+            
+            self.logger.info(f"정제된 응답: {cleaned_response[:200]}...")
+            
+            # JSON 파싱
+            response_data = json.loads(cleaned_response)
             self.logger.info("JSON 파싱 완료")
             
             # 사용 가능한 장소들의 매핑 생성
@@ -167,6 +171,7 @@ class AIRecommendRepository:
             
             self.logger.info(f"최종 추천 장소 수: {len(recommended)}")
             return recommended
+            
         except Exception as e:
             self.logger.error(f"AI 응답 파싱 중 에러: {str(e)}")
             self.logger.error(f"원본 응답: {ai_response}")
