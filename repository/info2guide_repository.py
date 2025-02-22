@@ -18,7 +18,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
     # plan_type에 따른 스타일 정의 (해당 스타일만 출력)
     if plan_type.lower() == 'busy':
         style_definition = """
-[BUSY 스타일]
+[널널한 일정 선호 스타일]
 - 목적: 제한된 시간에 최대한 많은 곳을 경험
 - 하루 방문 장소: 4곳
 - 장소당 체류 시간: 1-1.5시간
@@ -27,7 +27,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         """
     elif plan_type.lower() == 'normal':
         style_definition = """
-[NORMAL 스타일]
+[적당한 일정 선호 스타일]
 - 목적: 여유있게 주요 관광지 방문
 - 하루 방문 장소: 3곳
 - 장소당 체류 시간: 1.5-2시간
@@ -36,7 +36,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         """
     elif plan_type.lower() == 'relaxed':
         style_definition = """
-[RELAXED 스타일]
+[널널한 일정 선호 스타일]
 - 목적: 여유로운 일정으로 각 장소를 충분히 즐김
 - 하루 방문 장소: 2곳
 - 장소당 체류 시간: 2-3시간
