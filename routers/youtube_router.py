@@ -3,8 +3,7 @@ from typing import List
 from models.youtube_schemas import ContentRequest, YouTubeResponse
 from services.youtube_service import YouTubeService
 from pydantic import BaseModel
-from repositories.youtube_repository import YouTubeRepository
-
+from repository.youtube_repository import YouTubeRepository  # repository로 수정
 router = APIRouter()
 youtube_service = YouTubeService()
 youtube_repository = YouTubeRepository()

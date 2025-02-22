@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, status
 
 
 
+
 from ai_api.youtube_subtitle import (
     get_video_info, process_link, split_text, summarize_text,
     extract_place_names, search_place_details, get_place_photo_google
