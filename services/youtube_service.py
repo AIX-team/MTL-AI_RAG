@@ -1051,7 +1051,7 @@ class TextProcessingService:
 결과는 아래 형식으로 작성해 주세요
 아래는 예시입니다. 
 
-방문한 장소: 스미다 타워 (주소) 타임스탬프: [HH:MM:SS]
+방문한 장소: 스미다 타워 (지역 이름) 타임스탬프: [HH:MM:SS]
 - 장소설명: [유튜버의 설명] 도쿄 스카이트리를 대표하는 랜드마크로, 전망대에서 도쿄 시내를 한눈에 볼 수 있습니다. 유튜버가 방문했을 때는 날씨가 좋아서 후지산까지 보였고, 야경이 특히 아름다웠다고 합니다.
 - 먹은 음식: 라멘 이치란
     - 설명: 진한 국물과 쫄깃한 면발로 유명한 라멘 체인점으로, 개인실에서 편안하게 식사할 수 있습니다.
@@ -1060,7 +1060,7 @@ class TextProcessingService:
 - 추천 사항: 스카이 트리 전망대 방문
     - 설명: 도쿄의 아름다운 야경을 감상할 수 있으며, 사진 촬영 하기에 최적의 장소입니다.
 
-방문한 장소: 유니버셜 스튜디오 일본 (주소) 타임스탬프: [HH:MM:SS]
+방문한 장소: 유니버셜 스튜디오 일본 (지역 이름) 타임스탬프: [HH:MM:SS]
 - 장소설명: [유튜버의 설명] 유튜버가 방문했을 때는 평일임에도 사람이 많았지만, 싱글라이더를 이용해서 대기 시간을 많이 줄일 수 있었습니다. 특히 해리포터 구역의 분위기가 실제 영화의 한 장면에 들어온 것 같았고, 버터맥주도 맛있었다고 합니다.
 - 유의 사항: 짧은 옷 착용 
     - 설명: 팀랩 플래닛의 일부 구역에서는 물이 높고 거울이 있으므로, 짧은 옷을 입는 것이 좋다.
@@ -1113,7 +1113,7 @@ class TextProcessingService:
 결과는 아래 형식으로 작성해 주세요
 아래는 예시입니다. 
 
-방문한 장소: 스미다 타워 (주소) 타임스탬프: [HH:MM:SS]
+방문한 장소: 스미다 타워 (지역 이름) 타임스탬프: [HH:MM:SS]
 - 장소설명: [유튜버의 설명] 도쿄 스카이트리를 대표하는 랜드마크로, 전망대에서 도쿄 시내를 한눈에 볼 수 있습니다. 유튜버가 방문했을 때는 날씨가 좋아서 후지산까지 보였고, 야경이 특히 아름다웠다고 합니다.
 - 먹은 음식: 라멘 이치란
     - 설명: 진한 국물과 쫄깃한 면발로 유명한 라멘 체인점으로, 개인실에서 편안하게 식사할 수 있습니다.
@@ -1166,23 +1166,47 @@ class PlaceService:
         return result
 
     @staticmethod
-    def search_place_details(place_name: str) -> Dict[str, Any]:
-        """Google Places API를 사용하여 장소 정보를 검색"""
+    def search_place_details(place_info: str) -> Dict[str, Any]:
+        """Google Places API를 사용하여 장소 정보를 검색
+        Args:
+            place_info: "스미다 타워 (도쿄)" 형식의 장소 정보
+        """
         try:
+            # 장소 이름과 지역 분리
+            place_parts = place_info.split('(')
+            place_name = place_parts[0].strip()
+            region = place_parts[1].strip(')').strip() if len(place_parts) > 1 else "Japan"
+            
+            # 검색어 조합
+            search_query = f"{place_name} {region}"
+            print(f"[search_place_details] 검색어: {search_query}")
+            
             gmaps = googlemaps.Client(key=os.getenv("GOOGLE_PLACES_API_KEY"))
             
-            # 장소 검색
-            places_result = gmaps.places(place_name)
+            # 장소 검색 (조합된 검색어 사용)
+            places_result = gmaps.places(
+                search_query,
+                language='ja'  # 일본어로 결과 요청
+            )
             
             if not places_result['results']:
-                print(f"[search_place_details] 장소를 찾을 수 없음: {place_name}")
+                print(f"[search_place_details] 장소를 찾을 수 없음: {search_query}")
                 return None
                 
             place = places_result['results'][0]
             place_id = place['place_id']
             
             # 상세 정보 검색
-            details_result = gmaps.place(place_id, language='ko')
+            details_result = gmaps.place(
+                place_id, 
+                language='ko',
+                fields=[
+                    'name', 'formatted_address', 'geometry', 'rating',
+                    'formatted_phone_number', 'website', 'price_level',
+                    'opening_hours', 'photos', 'reviews', 'types'
+                ]
+            )
+            
             if not details_result.get('result'):
                 return None
                 
@@ -1202,11 +1226,12 @@ class PlaceService:
                 'price_level': details.get('price_level'),
                 'opening_hours': details.get('opening_hours', {}).get('weekday_text', []),
                 'photos': details.get('photos', []),
-                'best_review': best_review
+                'best_review': best_review,
+                'search_query': search_query  # 디버깅을 위해 검색어 포함
             }
             
         except Exception as e:
-            print(f"[search_place_details] 장소 정보 검색 중 오류 발생 ({place_name}): {str(e)}")
+            print(f"[search_place_details] 장소 정보 검색 중 오류 발생 ({place_info}): {str(e)}")
             return None
 
     @staticmethod
