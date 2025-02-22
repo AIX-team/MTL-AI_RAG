@@ -5,7 +5,7 @@ from typing import List, Dict
 import json
 
 def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
-    """GPT 프롬프트 생성 (ID와 Address 정보 포함)"""
+    """GPT 프롬프트 생성 (ID와 Address 정보 포함) - 선택된 plan_type에 맞는 일정만 작성"""
     total_places = len(places)
     places_per_day = {
         'busy': 4,
@@ -13,10 +13,49 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         'relaxed': 2
     }
     required_places = days * places_per_day[plan_type.lower()]
+    plan_type_upper = plan_type.upper()
+
+    # plan_type에 따른 스타일 정의 (해당 스타일만 출력)
+    if plan_type.lower() == 'busy':
+        style_definition = """
+[BUSY 스타일]
+- 목적: 제한된 시간에 최대한 많은 곳을 경험
+- 하루 방문 장소: 4곳
+- 장소당 체류 시간: 1-1.5시간
+- 이동 시간: 장소 간 30분 이내
+- 특징: 효율적인 동선, 주요 관광지 위주
+        """
+    elif plan_type.lower() == 'normal':
+        style_definition = """
+[NORMAL 스타일]
+- 목적: 여유있게 주요 관광지 방문
+- 하루 방문 장소: 3곳
+- 장소당 체류 시간: 1.5-2시간
+- 이동 시간: 장소 간 40분 이내
+- 특징: 관광과 휴식의 균형을 고려한 일정
+        """
+    elif plan_type.lower() == 'relaxed':
+        style_definition = """
+[RELAXED 스타일]
+- 목적: 여유로운 일정으로 각 장소를 충분히 즐김
+- 하루 방문 장소: 2곳
+- 장소당 체류 시간: 2-3시간
+- 이동 시간: 큰 제약 없음
+- 특징: 한 장소에 대한 깊은 체험과 문화 체험 중심
+        """
+    else:
+        style_definition = ""
     
     balance_guide = ""
     if total_places < required_places:
         balance_guide = f"""
+        주의사항:
+매우중요!! -> 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요.
+1. {plan_type_upper} 스타일에 맞는 하루 방문 장소 수를 지켜주세요.
+2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
+3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
+4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
+
 [장소 부족 상황 가이드]
 - 전체 필요 장소 수: {required_places}개
 - 현재 가용 장소 수: {total_places}개
@@ -41,7 +80,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
      - 이동 시간이 긴 원거리 장소
      - 방문 소요 시간이 너무 짧은 장소
   3. 제외된 장소는 '추천 대체 장소' 목록으로 별도 제공"""
-    
+
     place_details = "\n".join([
         f"Place {i+1}:\n"
         f"ID: {place.get('id', 'N/A')}\n"
@@ -55,31 +94,11 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         for i, place in enumerate(places)
     ])
     
-    return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
+    return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type_upper} 스타일의 여행 일정을 반드시 생성해주세요.
+
+{style_definition}
 
 {balance_guide}
-
-[여행 스타일 정의]
-1. BUSY 스타일:
-   - 목적: 제한된 시간에 최대한 많은 곳을 경험
-   - 하루 방문 장소: 4곳
-   - 장소당 체류 시간: 1-1.5시간
-   - 이동 시간: 장소 간 30분 이내
-   - 특징: 효율적인 동선, 주요 관광지 위주
-
-2. NORMAL 스타일:
-   - 목적: 여유있게 주요 관광지 방문
-   - 하루 방문 장소: 3곳
-   - 장소당 체류 시간: 1.5-2시간
-   - 이동 시간: 장소 간 40분 이내
-   - 특징: 관광과 휴식 균형, 대중적인 코스, 효율적인 동선
-
-3. RELAXED 스타일:
-   - 목적: 각 장소를 충분히 음미
-   - 하루 방문 장소: 2곳
-   - 장소당 체류 시간: 2-3시간
-   - 이동 시간: 제한 없음
-   - 특징: 여유로운 일정, 문화 체험 중심
 
 [일정 수립 규칙]
 1. 시간대별 최적화:
@@ -125,13 +144,8 @@ Expected Duration: [예상 소요 시간]
 
 Day 2:
 [같은 형식 반복]
+"""
 
-주의사항:
-1. {plan_type.upper()} 스타일에 맞는 하루 방문 장소 수를 지켜주세요.
-2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
-3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
-4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
-5. 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요."""
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
@@ -161,6 +175,7 @@ async def get_gpt_response(prompt: str) -> Dict:
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
         return {'days': []}
+
 def parse_gpt_response(response_text: str) -> Dict:
     """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
     try:
