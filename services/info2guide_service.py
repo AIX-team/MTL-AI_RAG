@@ -9,7 +9,7 @@ class TravelPlannerService:
         openai.api_key = os.getenv("OPENAI_API_KEY")
         
     async def generate_travel_plans(self, places: List[PlaceInfo], days: int) -> List[TravelPlan]:
-        plan_types = ['busy', 'normal', 'relaxed']
+        plan_types = ['빼곡한 일정 선호', '적당한 일정 선호', '널널한 일정 선호']
         plans = []
         for plan_type in plan_types:
             try:
