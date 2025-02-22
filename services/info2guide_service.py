@@ -22,6 +22,17 @@ class TravelPlannerService:
         return plans
     
     async def _create_plan(self, places: List[PlaceInfo], days: int, plan_type: str) -> TravelPlan:
+        # plan_type을 표준화하기 위한 매핑 사전 정의
+        plan_type_mapping = {
+            '빼곡한 일정 선호': 'busy',
+            '적당한 일정 선호': 'normal',
+            '널널한 일정 선호': 'relaxed'
+        }
+        normalized_plan_type = plan_type_mapping.get(plan_type, plan_type.lower())
+
+        # 각 스타일에 따른 필수 장소 수 (busy: 4, normal: 3, relaxed: 2)
+        required_places = {'busy': 4, 'normal': 3, 'relaxed': 2}.get(normalized_plan_type, 3)
+        
         # 원본 PlaceInfo 객체들을 딕셔너리 리스트로 변환
         places_dict = [{
             'id': place.id,
@@ -42,10 +53,7 @@ class TravelPlannerService:
         response = await info2guide_repository.get_gpt_response(prompt)
         if not response or 'days' not in response:
             print(f"No valid response for {plan_type} plan")
-            return TravelPlan(plan_type=plan_type, daily_plans=[])
-        
-        # 각 스타일에 따른 필수 장소 수 설정 (busy: 4, normal: 3, relaxed: 2)
-        required_places = {'busy': 4, 'normal': 3, 'relaxed': 2}[plan_type.lower()]
+            return TravelPlan(plan_type=normalized_plan_type, daily_plans=[])
         
         daily_plans = []
         for day_data in response['days']:
@@ -105,7 +113,7 @@ class TravelPlannerService:
                 print(f"Error processing day {day_data.get('day_number', '?')}: {e}")
         
         return TravelPlan(
-            plan_type=plan_type,
+            plan_type=normalized_plan_type,
             daily_plans=daily_plans[:days]
         )
     

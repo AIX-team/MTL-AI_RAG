@@ -40,5 +40,6 @@ class DayPlan(BaseModel):
     places: List[PlaceDetail]
 
 class TravelPlan(BaseModel):
-    plan_type: str  # 'busy', 'normal', 'relaxed'
+    # plan_type은 "busy", "normal", "relaxed" 값으로 표준화됩니다.
+    plan_type: str  
     daily_plans: List[DayPlan]
