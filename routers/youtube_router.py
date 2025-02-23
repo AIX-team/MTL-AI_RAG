@@ -21,7 +21,13 @@ class SearchResponse(BaseModel):
 async def process_content(request: ContentRequest):
     try:
         print(f"Received request: {request}")
-        # process_urls 메서드 호출 시 await 사용
+        
+        # URL 유효성 검사
+        for url in request.urls:
+            if not url.startswith(('http://', 'https://')):
+                raise ValueError(f"유효하지 않은 URL 형식입니다: {url}")
+                
+        # process_urls 메서드 호출
         result = await youtube_service.process_urls(request.urls)
         
         # 응답 형식 검증

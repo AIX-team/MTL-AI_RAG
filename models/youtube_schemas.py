@@ -11,7 +11,7 @@ class ContentType(str, Enum):
     UNKNOWN = "unknown"
 
 class ContentRequest(BaseModel):
-    urls: List[HttpUrl]
+    urls: List[str]
 
 class ContentInfo(BaseModel):
     url: str
