@@ -21,8 +21,10 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, No
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from fastapi import APIRouter, HTTPException, status
-
-
+import asyncio
+import aiohttp
+from asyncio import Semaphore
+import httpx
 
 from ai_api.youtube_subtitle import (
     get_video_info, process_link, split_text, summarize_text,
@@ -251,77 +253,49 @@ class YouTubeService:
         except Exception as e:
             raise ValueError(f"Google Maps 클라이언트 초기화 실패: {str(e)}")
 
-    def process_urls(self, urls: List[str]) -> Dict:
-        """URL 목록을 처리하여 각각의 요약을 생성"""
+        # 동시성 제어를 위한 세마포어 추가
+        self.semaphore = Semaphore(10)  # 최대 10개의 동시 요청 허용
+        self.session = None
+
+    async def get_session(self) -> aiohttp.ClientSession:
+        """비동기 HTTP 세션 반환"""
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession()
+        return self.session
+
+    async def process_urls(self, urls: List[str]) -> Dict:
         try:
             content_infos = []
             place_details = []
             start_time = time.time()
-
-            for url in urls:
-                parsed_url = urlparse(url)
-                if 'youtube.com' in parsed_url.netloc:
-                    # YouTube 영상 처리
-                    video_id = parse_qs(parsed_url.query).get('v', [None])[0]
-                    if video_id:
-                        # 비디오 정보 가져오기
-                        video_info = self._get_video_info(video_id)
-                        content_info = ContentInfo(
-                            url=url,
-                            title=video_info.title,
-                            author=video_info.channel,
-                            platform=ContentType.YOUTUBE
-                        )
-                        content_infos.append(content_info)
-                        
-                        # 장소 정보 추출 (source_url 포함)
-                        video_places = self._process_youtube_video(video_id, url)
-                        place_details.extend(video_places)
-                        print(f"YouTube 영상 '{video_info.title}'에서 추출된 장소: {len(video_places)}개")
+            
+            # 비동기 작업 목록 생성
+            tasks = []
+            async with aiohttp.ClientSession() as session:
+                for url in urls:
+                    task = self.process_single_url(url, session)
+                    tasks.append(task)
                 
-                elif 'blog.naver.com' in parsed_url.netloc:
-                    # 네이버 블로그 제목 및 작성자 정보 가져오기
-                    title, author = self.content_service._get_naver_blog_info(url)
-
-                    # 네이버 블로그 본문 가져오기
-                    content = self.content_service.process_content(url)  # 여기서 _get_naver_blog_content 함수가 호출됨
-                    # 본문을 청크로 나누기
-                    chunks = self.text_service.split_text(content)
-                    # 청크들을 요약해서 최종 요약 생성
-                    summary = self.text_service.summarize_text(chunks)
-
-                    # 네이버 블로그 콘텐츠 정보 저장
-                    content_info = ContentInfo(
-                        url=url,
-                        title=title,
-                        author=author,
-                        platform=ContentType.NAVER_BLOG
-                    )
-                    content_infos.append(content_info)
-
-                    # (원하는 경우) 요약된 결과를 추가적으로 활용할 수도 있습니다.
-                    # 예를 들어, summary를 로그로 남기거나 최종 결과에 포함시키기
-
-                    # 네이버 블로그에서 장소 정보 추출
-                    blog_places = self._process_naver_blog(url)
-                    place_details.extend(blog_places)
-
-                    print(f"네이버 블로그 '{title}'에서 추출된 장소: {len(blog_places)}개")
-
+                # 모든 작업 동시 실행
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 결과 처리
+                for result in results:
+                    if isinstance(result, Exception):
+                        print(f"URL 처리 중 오류 발생: {str(result)}")
+                        continue
+                    
+                    if result:
+                        content_info, places = result
+                        content_infos.append(content_info)
+                        place_details.extend(places)
 
             processing_time = time.time() - start_time
 
-            # URL별로 장소 정보 그룹화
-            url_places = {}
-            for place in place_details:
-                if place.source_url not in url_places:
-                    url_places[place.source_url] = []
-                url_places[place.source_url].append(place)
-
-            # 최종 요약 생성 (URL별로 구분된 장소 정보 포함)
+            # 최종 요약 생성
             summaries = {}
             for content in content_infos:
-                places = url_places.get(content.url, [])
+                places = [p for p in place_details if p.source_url == content.url]
                 summary = self._format_final_result(
                     content_infos=[content],
                     place_details=places,
@@ -329,29 +303,10 @@ class YouTubeService:
                     urls=[content.url]
                 )
                 summaries[content.url] = summary
-                print(f"'{content.title}' 요약 생성 완료 (장소 {len(places)}개 포함)")
 
-            # 벡터 DB와 파일에 저장
-            try:
-                # 벡터 DB에 저장
-                self.repository.save_to_vectordb(summaries, content_infos, place_details)
-                print("✅ 벡터 DB 저장 완료")
-                
-                # 파일로 저장
-                saved_paths = self.repository.save_final_summary(summaries, content_infos)
-                print(f"✅ 파일 저장 완료: {len(saved_paths)}개 파일")
-                
-                # URL별 저장 결과 로그
-                for content in content_infos:
-                    places_count = len(url_places.get(content.url, []))
-                    print(f"URL: {content.url}")
-                    print(f"- 제목: {content.title}")
-                    print(f"- 플랫폼: {content.platform.value}")
-                    print(f"- 추출된 장소 수: {places_count}")
-                    print("-" * 50)
-                
-            except Exception as e:
-                print(f"저장 중 오류 발생: {str(e)}")
+            # 벡터 DB와 파일에 비동기 저장
+            await self.repository.save_to_vectordb(summaries, content_infos, place_details)
+            await self.repository.save_final_summary(summaries, content_infos)
 
             return {
                 "summary": summaries,
@@ -362,6 +317,159 @@ class YouTubeService:
 
         except Exception as e:
             raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
+
+    async def process_single_url(self, url: str, session: aiohttp.ClientSession) -> Tuple[ContentInfo, List[PlaceInfo]]:
+        """단일 URL 비동기 처리"""
+        async with self.semaphore:  # 동시성 제어
+            try:
+                parsed_url = urlparse(url)
+                if 'youtube.com' in parsed_url.netloc:
+                    return await self._process_youtube_url(url, session)
+                elif 'blog.naver.com' in parsed_url.netloc:
+                    return await self._process_naver_blog_url(url, session)
+                # 다른 URL 타입 처리...
+            except Exception as e:
+                print(f"URL 처리 중 오류: {str(e)}")
+                raise
+
+    async def _process_youtube_url(self, url: str, session: aiohttp.ClientSession) -> Tuple[ContentInfo, List[PlaceInfo]]:
+        """YouTube URL 비동기 처리"""
+        video_id = parse_qs(urlparse(url).query).get('v', [None])[0]
+        if not video_id:
+            raise ValueError("잘못된 YouTube URL")
+
+        # 비디오 정보 비동기 요청
+        video_info = await self._get_video_info_async(video_id, session)
+        content_info = ContentInfo(
+            url=url,
+            title=video_info.title,
+            author=video_info.channel,
+            platform=ContentType.YOUTUBE
+        )
+
+        # 자막 및 장소 정보 비동기 처리
+        transcript = await self._get_youtube_transcript_async(video_id)
+        places = await self._process_youtube_video_async(video_id, url, transcript)
+
+        return content_info, places
+
+    async def _get_video_info_async(self, video_id: str, session: aiohttp.ClientSession) -> VideoInfo:
+        """비디오 정보 비동기 요청"""
+        api_url = f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}"
+        try:
+            async with session.get(api_url) as response:
+                # 응답 텍스트를 먼저 가져옴
+                text = await response.text()
+                try:
+                    # 텍스트를 JSON으로 파싱
+                    import json
+                    data = json.loads(text)
+                    return VideoInfo(
+                        url=f"https://www.youtube.com/watch?v={video_id}",
+                        title=data.get('title'),
+                        channel=data.get('author_name')
+                    )
+                except json.JSONDecodeError:
+                    print(f"JSON 파싱 실패: {text[:200]}")  # 처음 200자만 로그로 출력
+                
+        except Exception as e:
+            print(f"비디오 정보 요청 실패: {str(e)}")
+        
+        # 실패 시 기본값 반환
+        return VideoInfo(
+            url=f"https://www.youtube.com/watch?v={video_id}",
+            title="제목을 가져올 수 없음",
+            channel="채널 정보를 가져올 수 없음"
+        )
+
+    async def _get_youtube_transcript_async(self, video_id: str) -> str:
+        """YouTube 자막을 비동기적으로 가져옴"""
+        try:
+            # YouTubeTranscriptApi는 비동기를 지원하지 않으므로 ThreadPool에서 실행
+            loop = asyncio.get_event_loop()
+            transcript_text = await loop.run_in_executor(None, self._get_youtube_transcript, video_id)
+            return transcript_text
+        except Exception as e:
+            print(f"자막 가져오기 실패: {str(e)}")
+            return ""
+
+    async def _process_youtube_video_async(self, video_id: str, source_url: str, transcript_text: str) -> List[PlaceInfo]:
+        """YouTube 영상을 비동기적으로 처리하여 장소 정보를 수집"""
+        try:
+            # 텍스트 분할 및 요약
+            chunks = self.text_service.split_text(transcript_text)
+            summary = self.text_service.summarize_text(chunks)
+            
+            # 장소 추출 및 정보 수집
+            place_names = self.place_service.extract_place_names(summary)
+            print(f"추출된 장소: {place_names}")
+            
+            # 장소 정보 수집
+            place_details = []
+            for place_name in place_names:
+                try:
+                    # Google Places API 호출은 비동기로 처리
+                    loop = asyncio.get_event_loop()
+                    places_result = await loop.run_in_executor(
+                        None, self.gmaps.places, place_name
+                    )
+                    
+                    if places_result['results']:
+                        place = places_result['results'][0]
+                        place_id = place['place_id']
+                        
+                        # 장소 상세 정보 가져오기
+                        details = await loop.run_in_executor(
+                            None, 
+                            lambda: self.gmaps.place(place_id, language='ko')['result']
+                        )
+                        
+                        # 장소 타입과 좌표 정보 추출
+                        place_type = details.get('types', ['unknown'])[0]
+                        location = details.get('geometry', {}).get('location', {})
+                        geometry = PlaceGeometry(
+                            latitude=location.get('lat'),
+                            longitude=location.get('lng')
+                        )
+                        
+                        place_info = PlaceInfo(
+                            name=place_name,
+                            source_url=source_url,
+                            type=place_type,
+                            geometry=geometry,
+                            description=self._extract_place_description(summary, place_name),
+                            official_description=await loop.run_in_executor(
+                                None,
+                                self._get_place_description_from_openai,
+                                place_name,
+                                place_type
+                            ),
+                            formatted_address=details.get('formatted_address'),
+                            rating=details.get('rating'),
+                            phone=details.get('formatted_phone_number'),
+                            website=details.get('website'),
+                            price_level=details.get('price_level'),
+                            opening_hours=details.get('opening_hours', {}).get('weekday_text'),
+                            google_info=details
+                        )
+                        
+                        # 사진 URL 추가
+                        if 'photos' in details:
+                            photo_ref = details['photos'][0]['photo_reference']
+                            photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={os.getenv('GOOGLE_PLACES_API_KEY')}"
+                            place_info.photos = [PlacePhoto(url=photo_url)]
+                        
+                        place_details.append(place_info)
+                        
+                except Exception as e:
+                    print(f"장소 정보 처리 중 오류 발생 ({place_name}): {str(e)}")
+                    continue
+            
+            return place_details
+            
+        except Exception as e:
+            print(f"YouTube 영상 처리 중 오류 발생: {str(e)}")
+            return []
 
     def _process_youtube_video(self, video_id: str, source_url: str) -> List[PlaceInfo]:
         """YouTube 영상을 처리하여 장소 정보를 수집"""
@@ -1043,7 +1151,7 @@ class TextProcessingService:
 4. 추천 사항만 있는 것들은 추천 사항 섹션에 모아주세요.
 5. 가능한 장소 이름을 알고 있다면 실제 주소를 포함해 주세요.
 7. 본문 내에 언급된 모든 장소 (예: "도쿄 해리포터 스튜디오", "노보리베츠" 등)를 반드시 결과에 포함시켜 주세요.
-8. 주소가 포함된 경우 이를 제외하고, 일본 내 장소만 제공해야 합니다. "야키토리집"이라고만 언급된 경우에는 오사카 내의 야키토리집 중 하나의 주소를 찾아서 제공해 주세요
+8. 주소가 포함된 경우 이를 제외하고, 일본 내 장소만 제공해야 합니다. "야키토리집"이라고만 언급된 경우에는 오사카 내의 야키토리집 중 하나의 주소를 찾아서 제공해 주세요.
 9. 아카타 샤브샤브"와 같이 명확한 브랜드명이 언급되지 않은 경우, 지역 내 적합한 샤브샤브집 주소를 찾아서 제공해 주세요.
 
 **결과 형식:**

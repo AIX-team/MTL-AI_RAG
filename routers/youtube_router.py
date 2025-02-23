@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from typing import List
 from models.youtube_schemas import ContentRequest, YouTubeResponse
 from services.youtube_service import YouTubeService
@@ -29,7 +29,7 @@ async def process_content(request: ContentRequest):
         )
     
     try:
-        result = youtube_service.process_urls(urls)
+        result = await youtube_service.process_urls(urls)
         # 결과가 올바른 형식인지 확인
         if not isinstance(result["summary"], dict):
             raise ValueError("최종 요약이 딕셔너리 형식이 아닙니다.")
@@ -51,12 +51,10 @@ async def process_content(request: ContentRequest):
 async def search_content(request: SearchRequest):
     """벡터 DB에서 콘텐츠 검색"""
     try:
-        results = youtube_service.search_content(request.query)
+        results = await youtube_service.search_content(request.query)
         return results
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"검색 중 오류가 발생했습니다: {str(e)}"
-        ) 
-    
-
+        )
