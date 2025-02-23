@@ -6,13 +6,14 @@ from typing import List
 router = APIRouter()
 travel_service = TravelPlannerService()
 
-@router.post("/generate-plans", response_model=List[TravelPlan])
+@router.post("/generate-plans", response_model=TravelPlan)
 async def generate_plans(request: PlaceSelectRequest):
     try:
-        plans = await travel_service.generate_travel_plans(
+        plan = await travel_service.generate_travel_plans(
             request.places,
-            request.travel_days
+            request.travel_days,
+            request.travelTaste
         )
-        return plans
+        return plan
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
