@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from pydantic import validator
 
 class PlaceInfo(BaseModel):
     id: str
@@ -18,8 +19,30 @@ class PlaceInfo(BaseModel):
     rating: Optional[float] = None  # rating도 Optional로 변경 가능
 
 class PlaceSelectRequest(BaseModel):
-    travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
+    travel_days: int
+    travel_taste: str
+    
+    @validator('travel_taste')
+    def validate_travel_taste(cls, v):
+        # 한글-영문 매핑 정의
+        taste_mapping = {
+            '빼곡한 일정 선호': 'busy',
+            '적당한 일정 선호': 'normal',
+            '널널한 일정 선호': 'relaxed'
+        }
+        
+        # 이미 영문이면 그대로 검증
+        if v.lower() in ['busy', 'normal', 'relaxed']:
+            return v.lower()
+            
+        # 한글이면 매핑된 영문으로 변환
+        if v in taste_mapping:
+            return taste_mapping[v]
+            
+        # 둘 다 아니면 에러
+        valid_tastes = list(taste_mapping.keys()) + ['busy', 'normal', 'relaxed']
+        raise ValueError(f'travel_taste must be one of {valid_tastes}')
 
 class PlaceDetail(BaseModel):
     id: str
