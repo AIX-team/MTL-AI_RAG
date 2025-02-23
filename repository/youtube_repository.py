@@ -51,7 +51,7 @@ class YouTubeRepository:
             self.vectordb = None
 
     async def save_to_vectordb(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo]) -> None:
-        """벡터 DB에 최종 요약 비동기 저장"""
+        """벡터 DB에 최종 요약 저장"""
         try:
             documents = []
             for content in content_infos:
@@ -65,10 +65,7 @@ class YouTubeRepository:
                 }
                 documents.append(Document(page_content=summary, metadata=metadata))
             
-            # 벡터 DB 저장 작업을 비동기 실행 컨텍스트로 래핑
-            await asyncio.get_event_loop().run_in_executor(
-                None, self.vectordb.add_documents, documents
-            )
+            await self.vectordb.aadd_documents(documents)  # 비동기 메서드 사용
             print(f"✅ 벡터 DB 저장 완료: {len(documents)}개 문서")
         except Exception as e:
             print(f"벡터 DB 저장 중 오류 발생: {str(e)}")
@@ -97,26 +94,25 @@ class YouTubeRepository:
                 f.write(chunk)
 
     async def save_final_summary(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo]) -> List[str]:
-        """최종 요약을 파일로 비동기 저장"""
+        """URL별로 최종 요약을 파일로 저장하고 파일 경로 리스트 반환"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         saved_paths = []
         
-        for idx, content in enumerate(content_infos, 1):
-            platform_type = content.platform.value
-            file_name = f"final_summary_{platform_type}_{idx}_{timestamp}.txt"
-            file_path = os.path.join(self.summary_dir, file_name)
-            
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-                header = f"""=== {platform_type.upper()} 콘텐츠 요약 ===\n"""
-                await f.write(header)
+        for content in content_infos:
+            try:
+                file_name = f"final_summary_{content.platform.value}_{timestamp}.txt"
+                file_path = os.path.join(self.summary_dir, file_name)
                 
-                if content.url in final_summaries:
-                    summary_content = final_summaries[content.url]
-                    if isinstance(summary_content, dict):
-                        summary_content = str(summary_content)
-                    await f.write(summary_content)
-            
-            saved_paths.append(file_path)
+                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                    summary = final_summaries.get(content.url, "요약 정보 없음")
+                    await f.write(summary)
+                
+                saved_paths.append(file_path)
+                print(f"✅ 요약본 저장 완료: {file_path}")
+                
+            except Exception as e:
+                print(f"파일 저장 중 오류 발생: {str(e)}")
+                continue
         
         return saved_paths
 

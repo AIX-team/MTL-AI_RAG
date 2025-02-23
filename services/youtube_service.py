@@ -251,7 +251,7 @@ class YouTubeService:
         except Exception as e:
             raise ValueError(f"Google Maps 클라이언트 초기화 실패: {str(e)}")
 
-    def process_urls(self, urls: List[str]) -> Dict:
+    async def process_urls(self, urls: List[str]) -> Dict:
         """URL 목록을 처리하여 각각의 요약을 생성"""
         try:
             content_infos = []
@@ -264,7 +264,6 @@ class YouTubeService:
                     # YouTube 영상 처리
                     video_id = parse_qs(parsed_url.query).get('v', [None])[0]
                     if video_id:
-                        # 비디오 정보 가져오기
                         video_info = self._get_video_info(video_id)
                         content_info = ContentInfo(
                             url=url,
@@ -274,7 +273,6 @@ class YouTubeService:
                         )
                         content_infos.append(content_info)
                         
-                        # 장소 정보 추출 (source_url 포함)
                         video_places = self._process_youtube_video(video_id, url)
                         place_details.extend(video_places)
                         print(f"YouTube 영상 '{video_info.title}'에서 추출된 장소: {len(video_places)}개")
@@ -318,7 +316,7 @@ class YouTubeService:
                     url_places[place.source_url] = []
                 url_places[place.source_url].append(place)
 
-            # 최종 요약 생성 (URL별로 구분된 장소 정보 포함)
+            # 최종 요약 생성
             summaries = {}
             for content in content_infos:
                 places = url_places.get(content.url, [])
@@ -334,11 +332,11 @@ class YouTubeService:
             # 벡터 DB와 파일에 저장
             try:
                 # 벡터 DB에 저장
-                self.repository.save_to_vectordb(summaries, content_infos, place_details)
+                await self.repository.save_to_vectordb(summaries, content_infos, place_details)
                 print("✅ 벡터 DB 저장 완료")
                 
                 # 파일로 저장
-                saved_paths = self.repository.save_final_summary(summaries, content_infos)
+                saved_paths = await self.repository.save_final_summary(summaries, content_infos)
                 print(f"✅ 파일 저장 완료: {len(saved_paths)}개 파일")
                 
                 # URL별 저장 결과 로그
@@ -701,7 +699,7 @@ URL: {info.url}"""
                         transcript_text.append(f"[{timestamp}] {text}")
                 
                 result = "\n".join(transcript_text)
-                print(f"�� 추출된 자동 생성 한국어 자막 길이: {len(result)} 자")
+                print(f"📝 추출된 자동 생성 한국어 자막 길이: {len(result)} 자")
                 print("=== 자막 일부 ===")
                 print(result[:500])
                 return result
