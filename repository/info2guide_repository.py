@@ -162,15 +162,16 @@ async def get_gpt_response(prompt: str) -> Dict:
         print(f"Error in get_gpt_response: {str(e)}")
         return {'days': []}
 def parse_gpt_response(response_text: str) -> Dict:
-    """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
+    """GPT 응답을 파싱하여 구조화된 데이터로 변환"""
     try:
         print("Starting to parse response...")
         days = []
         current_day = None
         current_place = None
         
-        # 불필요한 기호 제거
+        # 불필요한 마크다운 기호 제거
         response_text = (response_text.replace('###', '')
+                                    .replace('##', '')
                                     .replace('**', '')
                                     .replace('- ', '')
                                     .replace('*', '')
@@ -180,6 +181,7 @@ def parse_gpt_response(response_text: str) -> Dict:
         
         for line in lines:
             print(f"Processing line: {line}")
+            
             # Day 시작 감지
             if line.lower().startswith('day'):
                 if current_place and current_day:
@@ -189,18 +191,37 @@ def parse_gpt_response(response_text: str) -> Dict:
                 try:
                     day_num = int(''.join(filter(str.isdigit, line)))
                     current_day = {'day_number': day_num, 'places': []}
+                    current_place = None
                     print(f"Created new day: {day_num}")
                 except Exception as e:
                     print(f"Error parsing day number: {e}")
-                current_place = None
                 continue
             
-            # ':'가 포함된 라인 처리
+            # 키:값 형식의 라인 처리
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
-                # current_place가 None이면 자동 생성
+                # ID로 새로운 장소 시작 감지
+                if key == 'id':
+                    if current_place:
+                        if current_day:
+                            current_day['places'].append(current_place)
+                    current_place = {
+                        'id': '',
+                        'name': '',
+                        'address': '',
+                        'official_description': '',
+                        'reviewer_description': '',
+                        'place_type': '',
+                        'rating': '0',
+                        'image_url': '',
+                        'business_hours': '',
+                        'website': '',
+                        'latitude': '',
+                        'longitude': ''
+                    }
+                
                 if current_place is None:
                     current_place = {
                         'id': '',
@@ -216,9 +237,8 @@ def parse_gpt_response(response_text: str) -> Dict:
                         'latitude': '',
                         'longitude': ''
                     }
-                    print("Auto-created new place due to missing Place Name trigger.")
                 
-                # 키에 따른 값 할당
+                # 키에 따른 값 매핑
                 if key == 'id':
                     current_place['id'] = value
                 elif key == 'place_name':
@@ -227,18 +247,27 @@ def parse_gpt_response(response_text: str) -> Dict:
                     current_place['address'] = value
                 elif key == 'official_description':
                     current_place['official_description'] = value
-                elif key == 'reviewer_description' or key == "reviewer's_description":
+                elif key in ['reviewer_description', "reviewer's_description"]:
                     current_place['reviewer_description'] = value
                 elif key == 'place_type':
                     current_place['place_type'] = value
                 elif key == 'rating':
                     current_place['rating'] = value
                 elif key in ['place_image_url', 'image_url']:
-                    current_place['image_url'] = value
+                    # URL에서 이미지 링크만 추출
+                    if '(' in value and ')' in value:
+                        url = value[value.find('(')+1:value.find(')')]
+                        current_place['image_url'] = url
+                    else:
+                        current_place['image_url'] = value
                 elif key in ['business_time', 'business_hours']:
                     current_place['business_hours'] = value
                 elif key == 'website':
-                    current_place['website'] = value
+                    if '(' in value and ')' in value:
+                        url = value[value.find('(')+1:value.find(')')]
+                        current_place['website'] = url
+                    else:
+                        current_place['website'] = value
                 elif key == 'location':
                     try:
                         lat, lon = value.split(',')
@@ -248,8 +277,8 @@ def parse_gpt_response(response_text: str) -> Dict:
                         print(f"Error parsing location: {e}")
                         current_place['latitude'] = ''
                         current_place['longitude'] = ''
-                print(f"Set {key} = {value}")
         
+        # 마지막 장소와 날짜 처리
         if current_place and current_day:
             current_day['places'].append(current_place)
         if current_day:
