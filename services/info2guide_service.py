@@ -96,22 +96,26 @@ class TravelPlannerService:
                             None
                         )
                         
-                        if original_place:
-                            place_detail = PlaceDetail(
-                                id=original_place['id'],
-                                title=original_place['title'],
-                                address=original_place['address'],
-                                description=original_place['description'],
-                                intro=original_place['intro'],
-                                type=original_place['type'],
-                                rating=Decimal(str(original_place['rating'])),
-                                image=original_place['image'],
-                                open_hours=original_place['open_hours'] or '',
-                                phone=original_place['phone'],
-                                latitude=float(original_place['latitude']),
-                                longitude=float(original_place['longitude'])
-                            )
-                            places_list.append(place_detail)
+                        # 원본 장소를 찾지 못한 경우 GPT 응답의 데이터 사용
+                        if not original_place:
+                            original_place = place_data
+                        
+                        # 필수 필드가 없는 경우 기본값 설정
+                        place_detail = PlaceDetail(
+                            id=original_place.get('id', ''),
+                            title=original_place.get('title', original_place.get('name', '알 수 없는 장소')),
+                            address=original_place.get('address', '주소 정보 없음'),
+                            description=original_place.get('description', original_place.get('official_description', '설명 없음')),
+                            intro=original_place.get('intro', original_place.get('reviewer_description', '리뷰 없음')),
+                            type=original_place.get('type', original_place.get('place_type', '기타')),
+                            rating=Decimal(str(original_place.get('rating', 0))),
+                            image=original_place.get('image', original_place.get('image_url', '')),
+                            open_hours=original_place.get('open_hours', original_place.get('business_hours', '영업시간 정보 없음')),
+                            phone=original_place.get('phone', ''),
+                            latitude=float(original_place.get('latitude', 0)),
+                            longitude=float(original_place.get('longitude', 0))
+                        )
+                        places_list.append(place_detail)
                     except Exception as e:
                         print(f"Error creating PlaceDetail: {e}")
                         continue
@@ -125,6 +129,48 @@ class TravelPlannerService:
             except Exception as e:
                 print(f"Error processing day {day_data.get('day_number')}: {e}")
                 continue
+
+        # 일정이 비어있는 경우 기본 일정 생성
+        if not daily_plans:
+            print("Creating default plan from original places")
+            places_per_day = min(len(places), {'busy': 4, 'normal': 3, 'relaxed': 2}[plan_type.lower()])
+            
+            for day in range(1, days + 1):
+                start_idx = (day - 1) * places_per_day
+                end_idx = start_idx + places_per_day
+                day_places = places[start_idx:end_idx]
+                
+                if not day_places:
+                    break
+                    
+                places_list = []
+                for place in day_places:
+                    try:
+                        place_detail = PlaceDetail(
+                            id=place['id'],
+                            title=place['title'],
+                            address=place['address'],
+                            description=place['description'],
+                            intro=place['intro'],
+                            type=place['type'],
+                            rating=Decimal(str(place['rating'])),
+                            image=place['image'],
+                            open_hours=place['open_hours'] or '',
+                            phone=place['phone'],
+                            latitude=float(place['latitude']),
+                            longitude=float(place['longitude'])
+                        )
+                        places_list.append(place_detail)
+                    except Exception as e:
+                        print(f"Error creating default PlaceDetail: {e}")
+                        continue
+                
+                if places_list:
+                    day_plan = DayPlan(
+                        day_number=day,
+                        places=places_list
+                    )
+                    daily_plans.append(day_plan)
 
         return TravelPlan(
             plan_type=plan_type,
