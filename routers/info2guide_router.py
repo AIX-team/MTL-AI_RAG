@@ -11,7 +11,8 @@ async def generate_plans(request: PlaceSelectRequest):
     try:
         plans = await travel_service.generate_travel_plans(
             request.places,
-            request.travel_days
+            request.travel_days,
+            request.plan_type
         )
         return plans
     except Exception as e:

@@ -55,26 +55,26 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         for i, place in enumerate(places)
     ])
     
-    return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
+    return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type} 스타일의 여행 일정을 반드시 생성해주세요.
 
 {balance_guide}
 
 [여행 스타일 정의]
-1. BUSY 스타일:
+1. busy 스타일:
    - 목적: 제한된 시간에 최대한 많은 곳을 경험
    - 하루 방문 장소: 4곳
    - 장소당 체류 시간: 1-1.5시간
    - 이동 시간: 장소 간 30분 이내
    - 특징: 효율적인 동선, 주요 관광지 위주
 
-2. NORMAL 스타일:
+2. normal 스타일:
    - 목적: 여유있게 주요 관광지 방문
    - 하루 방문 장소: 3곳
    - 장소당 체류 시간: 1.5-2시간
    - 이동 시간: 장소 간 40분 이내
    - 특징: 관광과 휴식 균형, 대중적인 코스, 효율적인 동선
 
-3. RELAXED 스타일:
+3. relaxed 스타일:
    - 목적: 각 장소를 충분히 음미
    - 하루 방문 장소: 2곳
    - 장소당 체류 시간: 2-3시간
