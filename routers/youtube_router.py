@@ -22,9 +22,12 @@ class SearchResponse(BaseModel):
             description="YouTube 영상, 네이버 블로그, 티스토리 등의 URL을 받아 내용을 분석하고 요약합니다.")
 async def process_content(request: ContentRequest, response: Response):
     try:
-        print(f"Received request: {request}")
+        print(f"[요청 데이터] {request}")
         
         # URL 유효성 검사
+        if not request.urls:
+            raise ValueError("URL 리스트가 비어있습니다")
+            
         for url in request.urls:
             if not url.startswith(('http://', 'https://')):
                 raise ValueError(f"유효하지 않은 URL 형식입니다: {url}")
@@ -57,31 +60,31 @@ async def process_content(request: ContentRequest, response: Response):
         response.headers["Content-Encoding"] = "gzip"
         response.headers["Vary"] = "Accept-Encoding"
         
-        print(f"Sending response: {response}")
+        print(f"[응답 데이터] {response}")
         return response
         
     except ValueError as ve:
-        print(f"Validation error: {str(ve)}")
+        error_detail = {
+            "error": "유효성 검사 오류",
+            "message": str(ve),
+            "type": "ValidationError"
+        }
+        print(f"[검증 오류] {error_detail}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "error": "유효성 검사 오류",
-                "message": str(ve),
-                "type": "ValidationError"
-            }
+            detail=error_detail
         )
     except Exception as e:
-        print(f"Processing error: {str(e)}")
-        print(f"Error type: {type(e)}")
-        print(f"Error details: {e.__dict__}")
+        error_detail = {
+            "error": "내부 서버 오류",
+            "message": str(e),
+            "type": str(type(e)),
+            "stack_trace": str(e.__traceback__)
+        }
+        print(f"[처리 오류] {error_detail}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "내부 서버 오류",
-                "message": str(e),
-                "type": str(type(e)),
-                "stack_trace": str(e.__traceback__)
-            }
+            detail=error_detail
         )
 
 @router.post("/vectorsearch", response_model=List[SearchResponse])
