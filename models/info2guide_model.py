@@ -18,9 +18,19 @@ class PlaceInfo(BaseModel):
     rating: Optional[float] = None  # rating도 Optional로 변경 가능
 
 class PlaceSelectRequest(BaseModel):
-    travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
-    travel_taste: str = Field(..., alias="travelTaste")
+    travel_days: int = Field(..., description="Number of travel days")
+    travel_taste: str = Field(..., description="Travel style preference")
+
+    class Config:
+        allow_population_by_field_name = True
+        json_schema_extra = {
+            "example": {
+                "places": [],
+                "travel_days": 3,
+                "travel_taste": "빼곡한 일정 선호"
+            }
+        }
 
 class PlaceDetail(BaseModel):
     id: str
