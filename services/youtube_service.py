@@ -241,8 +241,12 @@ class YouTubeService:
         self.text_service = TextProcessingService()
         self.place_service = PlaceService()
         
+        # 청크 크기 제한 설정
+        self.MAX_CHUNK_SIZE = 50000  # 50KB
+        self.MAX_TOTAL_SIZE = 200000  # 200KB
+        
         # Google Maps API 키 확인 및 설정
-        google_maps_api_key = os.getenv('GOOGLE_PLACES_API_KEY')  # GOOGLE_MAPS_API_KEY 대신 GOOGLE_PLACES_API_KEY 사용
+        google_maps_api_key = os.getenv('GOOGLE_PLACES_API_KEY')
         if not google_maps_api_key:
             raise ValueError("GOOGLE_PLACES_API_KEY 환경 변수가 설정되지 않았습니다.")
         
@@ -259,107 +263,99 @@ class YouTubeService:
             start_time = time.time()
 
             for url in urls:
+                # URL 처리 크기 제한 확인
+                if len(url.encode()) > self.MAX_CHUNK_SIZE:
+                    print(f"Warning: URL too long, skipping: {url[:100]}...")
+                    continue
+
                 parsed_url = urlparse(url)
                 if 'youtube.com' in parsed_url.netloc:
-                    # YouTube 영상 처리
-                    video_id = parse_qs(parsed_url.query).get('v', [None])[0]
-                    if video_id:
-                        video_info = self._get_video_info(video_id)
-                        content_info = ContentInfo(
-                            url=url,
-                            title=video_info.title,
-                            author=video_info.channel,
-                            platform=ContentType.YOUTUBE
-                        )
-                        content_infos.append(content_info)
-                        
-                        video_places = self._process_youtube_video(video_id, url)
-                        place_details.extend(video_places)
-                        print(f"YouTube 영상 '{video_info.title}'에서 추출된 장소: {len(video_places)}개")
-                
+                    await self._process_youtube_url(url, content_infos, place_details)
                 elif 'blog.naver.com' in parsed_url.netloc:
-                    # 네이버 블로그 제목 및 작성자 정보 가져오기
-                    title, author = self.content_service._get_naver_blog_info(url)
-
-                    # 네이버 블로그 본문 가져오기
-                    content = self.content_service.process_content(url)  # 여기서 _get_naver_blog_content 함수가 호출됨
-                    # 본문을 청크로 나누기
-                    chunks = self.text_service.split_text(content)
-                    # 청크들을 요약해서 최종 요약 생성
-                    summary = self.text_service.summarize_text(chunks)
-
-                    # 네이버 블로그 콘텐츠 정보 저장
-                    content_info = ContentInfo(
-                        url=url,
-                        title=title,
-                        author=author,
-                        platform=ContentType.NAVER_BLOG
-                    )
-                    content_infos.append(content_info)
-
-                    # (원하는 경우) 요약된 결과를 추가적으로 활용할 수도 있습니다.
-                    # 예를 들어, summary를 로그로 남기거나 최종 결과에 포함시키기
-
-                    # 네이버 블로그에서 장소 정보 추출
-                    blog_places = self._process_naver_blog(url)
-                    place_details.extend(blog_places)
-
-                    print(f"네이버 블로그 '{title}'에서 추출된 장소: {len(blog_places)}개")
-
+                    await self._process_naver_blog_url(url, content_infos, place_details)
 
             processing_time = time.time() - start_time
 
-            # URL별로 장소 정보 그룹화
-            url_places = {}
-            for place in place_details:
-                if place.source_url not in url_places:
-                    url_places[place.source_url] = []
-                url_places[place.source_url].append(place)
-
-            # 최종 요약 생성
-            summaries = {}
-            for content in content_infos:
-                places = url_places.get(content.url, [])
-                summary = self._format_final_result(
-                    content_infos=[content],
-                    place_details=places,
-                    processing_time=processing_time,
-                    urls=[content.url]
-                )
-                summaries[content.url] = summary
-                print(f"'{content.title}' 요약 생성 완료 (장소 {len(places)}개 포함)")
-
-            # 벡터 DB와 파일에 저장
-            try:
-                # 벡터 DB에 저장
-                await self.repository.save_to_vectordb(summaries, content_infos, place_details)
-                print("✅ 벡터 DB 저장 완료")
-                
-                # 파일로 저장
-                saved_paths = await self.repository.save_final_summary(summaries, content_infos)
-                print(f"✅ 파일 저장 완료: {len(saved_paths)}개 파일")
-                
-                # URL별 저장 결과 로그
-                for content in content_infos:
-                    places_count = len(url_places.get(content.url, []))
-                    print(f"URL: {content.url}")
-                    print(f"- 제목: {content.title}")
-                    print(f"- 플랫폼: {content.platform.value}")
-                    print(f"- 추출된 장소 수: {places_count}")
-                    print("-" * 50)
-                
-            except Exception as e:
-                print(f"저장 중 오류 발생: {str(e)}")
-
-            return {
-                "summary": summaries,
-                "content_infos": [info.dict() for info in content_infos],
-                "processing_time_seconds": processing_time,
-                "place_details": [place.dict() for place in place_details]
-            }
+            # 결과 데이터 크기 제한
+            result = self._create_limited_result(content_infos, place_details, processing_time)
+            
+            return result
 
         except Exception as e:
+            print(f"Error in process_urls: {str(e)}")
             raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
+
+    def _create_limited_result(self, content_infos, place_details, processing_time):
+        """결과 데이터 크기를 제한하여 생성"""
+        summaries = {}
+        limited_place_details = []
+        
+        total_size = 0
+        
+        # 컨텐츠 정보 제한
+        for info in content_infos:
+            if total_size >= self.MAX_TOTAL_SIZE:
+                break
+            
+            summary = self._format_final_result(
+                content_infos=[info],
+                place_details=[p for p in place_details if p.source_url == info.url],
+                processing_time=processing_time,
+                urls=[info.url]
+            )
+            
+            summary_size = len(str(summary).encode())
+            if total_size + summary_size <= self.MAX_TOTAL_SIZE:
+                summaries[info.url] = summary
+                total_size += summary_size
+        
+        # 장소 상세 정보 제한
+        for place in place_details:
+            place_size = len(str(place.dict()).encode())
+            if total_size + place_size <= self.MAX_TOTAL_SIZE:
+                limited_place_details.append(place)
+                total_size += place_size
+            else:
+                break
+        
+        return {
+            "summary": summaries,
+            "content_infos": [info.dict() for info in content_infos],
+            "processing_time_seconds": processing_time,
+            "place_details": [place.dict() for place in limited_place_details]
+        }
+
+    async def _process_youtube_url(self, url, content_infos, place_details):
+        """YouTube URL 처리"""
+        video_id = parse_qs(urlparse(url).query).get('v', [None])[0]
+        if video_id:
+            video_info = self._get_video_info(video_id)
+            content_info = ContentInfo(
+                url=url,
+                title=video_info.title,
+                author=video_info.channel,
+                platform=ContentType.YOUTUBE
+            )
+            content_infos.append(content_info)
+            
+            video_places = self._process_youtube_video(video_id, url)
+            place_details.extend(video_places)
+
+    async def _process_naver_blog_url(self, url, content_infos, place_details):
+        """네이버 블로그 URL 처리"""
+        title, author = self.content_service._get_naver_blog_info(url)
+        content = self.content_service.process_content(url)
+        
+        content_info = ContentInfo(
+            url=url,
+            title=title,
+            author=author,
+            platform=ContentType.NAVER_BLOG
+        )
+        content_infos.append(content_info)
+        
+        blog_places = self._process_naver_blog(url)
+        place_details.extend(blog_places)
 
     def _process_youtube_video(self, video_id: str, source_url: str) -> List[PlaceInfo]:
         """YouTube 영상을 처리하여 장소 정보를 수집"""
@@ -1134,69 +1130,6 @@ class TextProcessingService:
         final_prompt = f"""
 아래는 여러 청크로 나뉜 요약입니다. 이 요약들을 통합하여 다음의 형식으로 최종 요약을 작성해 주세요. 반드시 아래 형식을 따르고, 빠지는 내용 없이 모든 정보를 포함해 주세요.
 **요구 사항:**
-1. 장소, 음식, 유의 사항, 추천 사항 등 각각의 정보를 세부적으로 작성해 주세요.
-2. 만약 해당 장소에서 먹은 음식, 유의 사항, 추천 사항이 없다면 작성하지 않고 넘어가도 됩니다.
-3. 방문한 장소가 없거나 유의 사항만 있을 때, 유의 사항 섹션에 모아주세요.
-4. 추천 사항만 있는 것들은 추천 사항 섹션에 모아주세요.
-5. 가능한 장소 이름을 알고 있다면 실제 주소를 포함해 주세요.
-7. 본문 내에 언급된 모든 장소 (예: "도쿄 해리포터 스튜디오", "노보리베츠" 등)를 반드시 결과에 포함시켜 주세요.
-8. 주소가 포함된 경우 이를 제외하고, 일본 내 장소만 제공해야 합니다. "야키토리집"이라고만 언급된 경우에는 오사카 내의 야키토리집 중 하나의 주소를 찾아서 제공해 주세요.
-9. 아카타 샤브샤브"와 같이 명확한 브랜드명이 언급되지 않은 경우, 지역 내 적합한 샤브샤브집 주소를 찾아서 제공해 주세요.
-
-**결과 형식:**
-
-결과는 아래 형식으로 작성해 주세요
-아래는 예시입니다. 
-
-방문한 장소: 스미다 타워 (주소) 타임스탬프: [HH:MM:SS]
-- 장소설명: [유튜버의 설명] 도쿄 스카이트리를 대표하는 랜드마크로, 전망대에서 도쿄 시내를 한눈에 볼 수 있습니다. 유튜버가 방문했을 때는 날씨가 좋아서 후지산까지 보였고, 야경이 특히 아름다웠다고 합니다.
-- 먹은 음식: 라멘 이치란
-    - 설명: 진한 국물과 쫄깃한 면발로 유명한 라멘 체인점으로, 개인실에서 편안하게 식사할 수 있습니다.
-- 유의 사항: 혼잡한 시간대 피하기
-    - 설명: 관광지 주변은 특히 주말과 휴일에 매우 혼잡할 수 있으므로, 가능한 평일이나 이른 시간에 방문하는 것이 좋습니다.
-- 추천 사항: 스카이 트리 전망대 방문
-    - 설명: 도쿄의 아름다운 야경을 감상할 수 있으며, 사진 촬영 하기에 최적의 장소입니다.
-
-방문한 장소: 유니버셜 스튜디오 일본 (주소) 타임스탬프: [HH:MM:SS]
-- 장소설명: [유튜버의 설명] 유튜버가 방문했을 때는 평일임에도 사람이 많았지만, 싱글라이더를 이용해서 대기 시간을 많이 줄일 수 있었습니다. 특히 해리포터 구역의 분위기가 실제 영화의 한 장면에 들어온 것 같았고, 버터맥주도 맛있었다고 합니다.
-- 유의 사항: 짧은 옷 착용 
-    - 설명: 팀랩 플래닛의 일부 구역에서는 물이 높고 거울이 있으므로, 짧은 옷을 입는 것이 좋다.
-
-**요약 청크:**
-{combined_summaries}
-
-**최종 요약:**
-"""
-        try:
-            final_response = openai.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are an expert summary writer who strictly adheres to the provided format."},
-                    {"role": "user", "content": final_prompt}
-                ],
-                temperature=0.1,
-                max_tokens=4096
-            )
-            final_summary = final_response.choices[0].message.content
-            print("\n[최종 요약 내용 일부]")
-            print(final_summary[:1000])
-            return final_summary
-        except Exception as e:
-            raise ValueError(f"최종 요약 중 오류 발생: {e}")
-
-    @staticmethod
-    def _generate_prompt(transcript_chunk: str) -> str:
-        language = detect(transcript_chunk)
-        if language != 'ko':
-            translation_instruction = "이 텍스트는 한국어가 아닙니다. 한국어로 번역해 주세요.\n\n"
-        else:
-            translation_instruction = ""
-
-        base_prompt = f"""
-{translation_instruction}
-아래는 여행 유튜버가 촬영한 영상의 자막입니다. 이 자막에서 언급된 모든 장소와 관련 정보를 분석하여 정리해 주세요.
-
-**요구 사항:**
 1. 자막에서 언급된 모든 장소를 찾아주세요. 다음과 같은 표현들을 모두 포함해야 합니다:
    - "방문한 장소:"
    - "목적지는"
@@ -1307,7 +1240,7 @@ class PlaceService:
                 'price_level': details.get('price_level'),
                 'opening_hours': details.get('opening_hours', {}).get('weekday_text', []),
                 'photos': details.get('photos', []),
-                'best_review': best_review
+                'best_review': bestreview
             }
             
         except Exception as e:

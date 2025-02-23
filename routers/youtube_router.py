@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Response
 from typing import List
 from models.youtube_schemas import ContentRequest, YouTubeResponse
 from services.youtube_service import YouTubeService
 from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+import json
 
 router = APIRouter()
 youtube_service = YouTubeService()
@@ -18,7 +20,7 @@ class SearchResponse(BaseModel):
             response_model=YouTubeResponse,
             summary="콘텐츠 분석",
             description="YouTube 영상, 네이버 블로그, 티스토리 등의 URL을 받아 내용을 분석하고 요약합니다.")
-async def process_content(request: ContentRequest):
+async def process_content(request: ContentRequest, response: Response):
     try:
         print(f"Received request: {request}")
         
@@ -51,6 +53,10 @@ async def process_content(request: ContentRequest):
         # 응답 생성
         response = YouTubeResponse(**response_data)
         
+        # 응답 압축 설정
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Vary"] = "Accept-Encoding"
+        
         print(f"Sending response: {response}")
         return response
         
@@ -58,7 +64,11 @@ async def process_content(request: ContentRequest):
         print(f"Validation error: {str(ve)}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(ve)
+            detail={
+                "error": "유효성 검사 오류",
+                "message": str(ve),
+                "type": "ValidationError"
+            }
         )
     except Exception as e:
         print(f"Processing error: {str(e)}")
@@ -69,7 +79,8 @@ async def process_content(request: ContentRequest):
             detail={
                 "error": "내부 서버 오류",
                 "message": str(e),
-                "type": str(type(e))
+                "type": str(type(e)),
+                "stack_trace": str(e.__traceback__)
             }
         )
 
