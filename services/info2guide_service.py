@@ -44,13 +44,18 @@ class TravelPlannerService:
             for day_data in plan.daily_plans:
                 try:
                     places_list = []
-                    day_places = getattr(day_data, 'places', [])
+                    day_places = day_data.get('places', []) if isinstance(day_data, dict) else []
                     
                     for place_data in day_places:
                         try:
+                            if not isinstance(place_data, dict):
+                                print(f"Invalid place data format: {place_data}")
+                                continue
+                                
                             # 원본 places 리스트에서 일치하는 장소 찾기
-                            place_id = getattr(place_data, 'id', None)
+                            place_id = place_data.get('id')
                             if not place_id:
+                                print(f"Place data missing ID: {place_data}")
                                 continue
                                 
                             original_place = next(
@@ -77,18 +82,18 @@ class TravelPlannerService:
                             else:
                                 # GPT 응답 데이터를 안전하게 처리
                                 place_detail = PlaceDetail(
-                                    id=getattr(place_data, 'id', ''),
-                                    title=getattr(place_data, 'title', getattr(place_data, 'name', '알 수 없는 장소')),
-                                    address=getattr(place_data, 'address', '주소 정보 없음'),
-                                    description=getattr(place_data, 'description', getattr(place_data, 'official_description', '설명 없음')),
-                                    intro=getattr(place_data, 'intro', getattr(place_data, 'reviewer_description', '리뷰 없음')),
-                                    type=getattr(place_data, 'type', getattr(place_data, 'place_type', '기타')),
-                                    rating=Decimal(str(getattr(place_data, 'rating', 0))),
-                                    image=getattr(place_data, 'image', getattr(place_data, 'image_url', '')),
-                                    open_hours=getattr(place_data, 'open_hours', getattr(place_data, 'business_hours', '영업시간 정보 없음')),
-                                    phone=getattr(place_data, 'phone', ''),
-                                    latitude=float(getattr(place_data, 'latitude', 0)),
-                                    longitude=float(getattr(place_data, 'longitude', 0))
+                                    id=place_data.get('id', ''),
+                                    title=place_data.get('title', place_data.get('name', '알 수 없는 장소')),
+                                    address=place_data.get('address', '주소 정보 없음'),
+                                    description=place_data.get('description', place_data.get('official_description', '설명 없음')),
+                                    intro=place_data.get('intro', place_data.get('reviewer_description', '리뷰 없음')),
+                                    type=place_data.get('type', place_data.get('place_type', '기타')),
+                                    rating=Decimal(str(place_data.get('rating', 0))),
+                                    image=place_data.get('image', place_data.get('image_url', '')),
+                                    open_hours=place_data.get('open_hours', place_data.get('business_hours', '영업시간 정보 없음')),
+                                    phone=place_data.get('phone', ''),
+                                    latitude=float(place_data.get('latitude', 0)),
+                                    longitude=float(place_data.get('longitude', 0))
                                 )
                             places_list.append(place_detail)
                         except Exception as e:
@@ -97,7 +102,7 @@ class TravelPlannerService:
                     
                     if places_list:  # 최소한 하나의 장소가 있는 경우에만 일정 추가
                         day_plan = DayPlan(
-                            day_number=getattr(day_data, 'day_number', len(daily_plans) + 1),
+                            day_number=day_data.get('day_number', len(daily_plans) + 1) if isinstance(day_data, dict) else len(daily_plans) + 1,
                             places=places_list
                         )
                         daily_plans.append(day_plan)
