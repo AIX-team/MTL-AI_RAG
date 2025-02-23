@@ -53,15 +53,15 @@ async def process_content(request: ContentRequest, response: Response):
             "place_details": result.get("place_details", [])
         }
         
-        # 응답 생성
-        response = YouTubeResponse(**response_data)
-        
         # 응답 압축 설정
         response.headers["Content-Encoding"] = "gzip"
         response.headers["Vary"] = "Accept-Encoding"
         
-        print(f"[응답 데이터] {response}")
-        return response
+        # 응답 생성
+        youtube_response = YouTubeResponse(**response_data)
+        print(f"[응답 데이터] {youtube_response}")
+        
+        return youtube_response
         
     except ValueError as ve:
         error_detail = {
