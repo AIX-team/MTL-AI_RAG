@@ -2,17 +2,32 @@
 
 import openai
 from typing import List, Dict
+from models.info2guide_model import PlaceInfo, PlaceDetail, DayPlan, TravelPlan
 import json
 
-def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
+def create_travel_prompt(places: List[Dict], plan_type: str, days: int, places_by_area: dict = None) -> str:
     """GPT 프롬프트 생성 (ID와 Address 정보 포함)"""
     total_places = len(places)
     places_per_day = {
-        'busy': 4,
-        'normal': 3,
-        'relaxed': 2
+        'busy': (4, 5),
+        'normal': (3, 4),
+        'relaxed': (2, 3)
     }
-    required_places = days * places_per_day[plan_type.lower()]
+    min_places, max_places = places_per_day[plan_type.lower()]
+    required_places = days * min_places
+    
+    # 지역 정보 문자열 생성
+    area_info = ""
+    if places_by_area:
+        area_info = "\n[지역 그룹 정보]\n"
+        for area_id, area_places in places_by_area.items():
+            center = area_places[0]
+            area_info += (
+                f"지역 {area_id}:\n"
+                f"중심 위치: {center.address}\n"
+                f"포함 장소: {', '.join(p.title for p in area_places)}\n"
+                f"좌표: ({center.latitude}, {center.longitude})\n\n"
+            )
     
     balance_guide = ""
     if total_places < required_places:
@@ -39,8 +54,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
   2. 선정 제외 기준:
      - 유사한 성격의 중복 장소
      - 이동 시간이 긴 원거리 장소
-     - 방문 소요 시간이 너무 짧은 장소
-  3. 제외된 장소는 '추천 대체 장소' 목록으로 별도 제공"""
+     - 방문 소요 시간이 너무 짧은 장소"""
     
     place_details = "\n".join([
         f"Place {i+1}:\n"
@@ -80,6 +94,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
     }
     
     return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
+
 [필수 규칙]
 1. 동선 최적화 (최우선 규칙)
    - 같은 지역의 장소들을 하루에 묶어서 배치
@@ -91,30 +106,9 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
    - BUSY: 하루 4-5곳 방문
    - NORMAL: 하루 3-4곳 방문
    - RELAXED: 하루 2-3곳 방문
-   
+
+{area_info}
 {balance_guide}
-
-[여행 스타일 정의]
-1. BUSY 스타일:
-   - 목적: 제한된 시간에 최대한 많은 곳을 경험
-   - 하루 방문 장소: 4곳
-   - 장소당 체류 시간: 1-1.5시간
-   - 이동 시간: 장소 간 30분 이내
-   - 특징: 효율적인 동선, 주요 관광지 위주
-
-2. NORMAL 스타일:
-   - 목적: 여유있게 주요 관광지 방문
-   - 하루 방문 장소: 3곳
-   - 장소당 체류 시간: 1.5-2시간
-   - 이동 시간: 장소 간 40분 이내
-   - 특징: 관광과 휴식 균형, 대중적인 코스, 효율적인 동선
-
-3. RELAXED 스타일:
-   - 목적: 각 장소를 충분히 음미
-   - 하루 방문 장소: 2곳
-   - 장소당 체류 시간: 2-3시간
-   - 이동 시간: 제한 없음
-   - 특징: 여유로운 일정, 문화 체험 중심
 
 [일정 수립 규칙]
 1. 시간대별 최적화:
@@ -153,8 +147,6 @@ Place Image URL: [이미지 URL]
 Business Time: [영업 시간]
 Website: [웹사이트 URL]
 Location: [위도, 경도]
-Recommended Visit Time: [권장 방문 시간]
-Expected Duration: [예상 소요 시간]
 
 [다음 장소...]
 
@@ -171,9 +163,8 @@ Day 2:
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
-        # 올바른 메서드 사용: openai.ChatCompletion.create
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4",  # 모델 변경
             messages=[
                 {
                     "role": "system",
@@ -199,7 +190,7 @@ async def get_gpt_response(prompt: str) -> Dict:
         return {'days': []}
 
 def parse_gpt_response(response_text: str) -> Dict:
-    """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
+    """GPT 응답을 파싱하여 구조화된 데이터로 변환"""
     try:
         print("Starting to parse response...")
         days = []
@@ -216,8 +207,6 @@ def parse_gpt_response(response_text: str) -> Dict:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         
         for line in lines:
-            print(f"Processing line: {line}")
-            # Day 시작 감지
             if line.lower().startswith('day'):
                 if current_place and current_day:
                     current_day['places'].append(current_place)
@@ -226,18 +215,15 @@ def parse_gpt_response(response_text: str) -> Dict:
                 try:
                     day_num = int(''.join(filter(str.isdigit, line)))
                     current_day = {'day_number': day_num, 'places': []}
-                    print(f"Created new day: {day_num}")
                 except Exception as e:
                     print(f"Error parsing day number: {e}")
                 current_place = None
                 continue
             
-            # ':'가 포함된 라인 처리
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
-                # current_place가 None이면 자동 생성
                 if current_place is None:
                     current_place = {
                         'id': '',
@@ -253,9 +239,7 @@ def parse_gpt_response(response_text: str) -> Dict:
                         'latitude': '',
                         'longitude': ''
                     }
-                    print("Auto-created new place due to missing Place Name trigger.")
                 
-                # 키에 따른 값 할당
                 if key == 'id':
                     current_place['id'] = value
                 elif key == 'place_name':
@@ -285,7 +269,6 @@ def parse_gpt_response(response_text: str) -> Dict:
                         print(f"Error parsing location: {e}")
                         current_place['latitude'] = ''
                         current_place['longitude'] = ''
-                print(f"Set {key} = {value}")
         
         if current_place and current_day:
             current_day['places'].append(current_place)
@@ -298,98 +281,5 @@ def parse_gpt_response(response_text: str) -> Dict:
         print(f"Error parsing GPT response: {str(e)}")
         print(f"Response text: {response_text}")
         return {'days': []}
-
-def _create_default_plan(self, places: List[PlaceInfo], days: int, plan_type: str, places_by_area: dict) -> List[TravelPlan]:
-    """GPT가 실패하거나 빈 응답을 줄 경우 기본 일정 생성"""
-    ranges = {
-        'busy': (4, 5),     # 빼곡한 일정: 하루 4-5곳
-        'normal': (3, 4),   # 적당한 일정: 하루 3-4곳
-        'relaxed': (2, 3)   # 널널한 일정: 하루 2-3곳
-    }
-    min_places, max_places = ranges.get(plan_type.lower(), (3, 4))
-    
-    # 전체 장소 수에 따른 하루 평균 장소 수 계산
-    total_places = len(places)
-    avg_places_per_day = total_places // days
-    
-    # 평균 장소 수가 범위를 벗어나는 경우 조정
-    if avg_places_per_day > max_places:
-        places_per_day = max_places
-    elif avg_places_per_day < min_places:
-        places_per_day = min_places
-    else:
-        places_per_day = avg_places_per_day
-    
-    # 지역별로 장소 그룹화 및 정렬
-    area_groups = {}
-    for area, area_places in places_by_area.items():
-        # 각 지역의 장소들을 평점순으로 정렬
-        sorted_places = sorted(area_places, 
-                             key=lambda p: p.rating if hasattr(p, 'rating') else 0, 
-                             reverse=True)
-        area_groups[area] = sorted_places
-    
-    # 일자별 계획 생성
-    daily_plans = []
-    remaining_places = list(places)
-    
-    for day_num in range(1, days + 1):
-        if not remaining_places:
-            break
-            
-        # 마지막 날이면 남은 장소 모두 할당
-        if day_num == days:
-            places_for_today = min(len(remaining_places), max_places)
-        else:
-            # 남은 날짜와 장소를 고려하여 오늘 할당할 장소 수 결정
-            remaining_days = days - day_num + 1
-            remaining_total = len(remaining_places)
-            min_needed = min_places * remaining_days
-            max_possible = max_places * remaining_days
-            
-            if remaining_total <= min_needed:
-                # 남은 장소가 너무 적으면 최소 기준으로 분배
-                places_for_today = min_places
-            elif remaining_total >= max_possible:
-                # 남은 장소가 너무 많으면 최대 기준으로 분배
-                places_for_today = max_places
-            else:
-                # 적절히 분배
-                places_for_today = remaining_total // remaining_days
-        
-        # 같은 지역의 장소들을 우선적으로 선택
-        selected_places = []
-        current_area = None
-        
-        # 아직 선택되지 않은 지역 중에서 가장 많은 장소가 있는 지역 선택
-        available_areas = {area: places for area, places in area_groups.items() 
-                         if any(p in remaining_places for p in places)}
-        
-        if available_areas:
-            current_area = max(available_areas.items(), 
-                             key=lambda x: len([p for p in x[1] if p in remaining_places]))[0]
-            
-            # 선택된 지역의 장소들 중에서 선택
-            area_places = [p for p in area_groups[current_area] if p in remaining_places]
-            selected_places.extend(area_places[:places_for_today])
-            
-            # 선택된 장소들 제거
-            for place in selected_places:
-                remaining_places.remove(place)
-        
-        # 선택된 장소가 목표보다 적으면 다른 지역에서 보충
-        while len(selected_places) < places_for_today and remaining_places:
-            selected_places.append(remaining_places.pop(0))
-        
-        if selected_places:
-            daily_plans.append(DayPlan(
-                day_number=day_num,
-                places=[self._create_place_detail(p) for p in selected_places]
-            ))
-    
-    return [TravelPlan(
-        plan_type=plan_type,
-        daily_plans=daily_plans
-    )]
 
 
