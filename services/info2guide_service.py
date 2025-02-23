@@ -3,6 +3,7 @@ import openai
 from models.info2guide_model import PlaceInfo, PlaceDetail, DayPlan, TravelPlan
 from repository import info2guide_repository
 import os
+from decimal import Decimal
 
 class TravelPlannerService:
     def __init__(self):
@@ -17,12 +18,42 @@ class TravelPlannerService:
         }
         plan_type = type_mapping.get(travelTaste)
         if not plan_type:
-            # Fallback to normal if travelTaste is not recognized
             plan_type = 'normal'
         try:
             plan = await self._create_plan(places, days, plan_type)
             print(f"Generated {plan_type} plan with {len(plan.daily_plans)} days")
-            return plan
+            
+            # 각 장소를 PlaceDetail 객체로 변환
+            daily_plans = []
+            for day in plan.daily_plans:
+                places_list = []
+                for place in day.places:
+                    place_detail = PlaceDetail(
+                        id=place.get('id', ''),
+                        title=place.get('title', ''),
+                        address=place.get('address', ''),
+                        description=place.get('description', ''),
+                        intro=place.get('intro', ''),
+                        type=place.get('type', ''),
+                        rating=Decimal(str(place.get('rating', 0))),
+                        image=place.get('image', ''),
+                        open_hours=place.get('open_hours', ''),
+                        phone=place.get('phone', ''),
+                        latitude=float(place.get('latitude', 0)),
+                        longitude=float(place.get('longitude', 0))
+                    )
+                    places_list.append(place_detail)
+                
+                day_plan = DayPlan(
+                    day_number=day['day_number'],
+                    places=places_list
+                )
+                daily_plans.append(day_plan)
+            
+            return TravelPlan(
+                plan_type=plan_type,
+                daily_plans=daily_plans
+            )
         except Exception as e:
             print(f"Error generating {plan_type} plan: {e}")
             return TravelPlan(plan_type=plan_type, daily_plans=[])
