@@ -167,6 +167,7 @@ Day 2:
 3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
 4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
 5. 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요."""
+
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
@@ -196,6 +197,7 @@ async def get_gpt_response(prompt: str) -> Dict:
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
         return {'days': []}
+
 def parse_gpt_response(response_text: str) -> Dict:
     """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
     try:
@@ -296,5 +298,98 @@ def parse_gpt_response(response_text: str) -> Dict:
         print(f"Error parsing GPT response: {str(e)}")
         print(f"Response text: {response_text}")
         return {'days': []}
+
+def _create_default_plan(self, places: List[PlaceInfo], days: int, plan_type: str, places_by_area: dict) -> List[TravelPlan]:
+    """GPT가 실패하거나 빈 응답을 줄 경우 기본 일정 생성"""
+    ranges = {
+        'busy': (4, 5),     # 빼곡한 일정: 하루 4-5곳
+        'normal': (3, 4),   # 적당한 일정: 하루 3-4곳
+        'relaxed': (2, 3)   # 널널한 일정: 하루 2-3곳
+    }
+    min_places, max_places = ranges.get(plan_type.lower(), (3, 4))
+    
+    # 전체 장소 수에 따른 하루 평균 장소 수 계산
+    total_places = len(places)
+    avg_places_per_day = total_places // days
+    
+    # 평균 장소 수가 범위를 벗어나는 경우 조정
+    if avg_places_per_day > max_places:
+        places_per_day = max_places
+    elif avg_places_per_day < min_places:
+        places_per_day = min_places
+    else:
+        places_per_day = avg_places_per_day
+    
+    # 지역별로 장소 그룹화 및 정렬
+    area_groups = {}
+    for area, area_places in places_by_area.items():
+        # 각 지역의 장소들을 평점순으로 정렬
+        sorted_places = sorted(area_places, 
+                             key=lambda p: p.rating if hasattr(p, 'rating') else 0, 
+                             reverse=True)
+        area_groups[area] = sorted_places
+    
+    # 일자별 계획 생성
+    daily_plans = []
+    remaining_places = list(places)
+    
+    for day_num in range(1, days + 1):
+        if not remaining_places:
+            break
+            
+        # 마지막 날이면 남은 장소 모두 할당
+        if day_num == days:
+            places_for_today = min(len(remaining_places), max_places)
+        else:
+            # 남은 날짜와 장소를 고려하여 오늘 할당할 장소 수 결정
+            remaining_days = days - day_num + 1
+            remaining_total = len(remaining_places)
+            min_needed = min_places * remaining_days
+            max_possible = max_places * remaining_days
+            
+            if remaining_total <= min_needed:
+                # 남은 장소가 너무 적으면 최소 기준으로 분배
+                places_for_today = min_places
+            elif remaining_total >= max_possible:
+                # 남은 장소가 너무 많으면 최대 기준으로 분배
+                places_for_today = max_places
+            else:
+                # 적절히 분배
+                places_for_today = remaining_total // remaining_days
+        
+        # 같은 지역의 장소들을 우선적으로 선택
+        selected_places = []
+        current_area = None
+        
+        # 아직 선택되지 않은 지역 중에서 가장 많은 장소가 있는 지역 선택
+        available_areas = {area: places for area, places in area_groups.items() 
+                         if any(p in remaining_places for p in places)}
+        
+        if available_areas:
+            current_area = max(available_areas.items(), 
+                             key=lambda x: len([p for p in x[1] if p in remaining_places]))[0]
+            
+            # 선택된 지역의 장소들 중에서 선택
+            area_places = [p for p in area_groups[current_area] if p in remaining_places]
+            selected_places.extend(area_places[:places_for_today])
+            
+            # 선택된 장소들 제거
+            for place in selected_places:
+                remaining_places.remove(place)
+        
+        # 선택된 장소가 목표보다 적으면 다른 지역에서 보충
+        while len(selected_places) < places_for_today and remaining_places:
+            selected_places.append(remaining_places.pop(0))
+        
+        if selected_places:
+            daily_plans.append(DayPlan(
+                day_number=day_num,
+                places=[self._create_place_detail(p) for p in selected_places]
+            ))
+    
+    return [TravelPlan(
+        plan_type=plan_type,
+        daily_plans=daily_plans
+    )]
 
 
