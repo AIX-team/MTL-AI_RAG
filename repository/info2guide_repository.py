@@ -164,7 +164,7 @@ async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
         response = openai.chat.completions.create(
-            model="gpt-4",  # 모델 변경
+            model="gpt-4o-mini",  # 모델 변경
             messages=[
                 {
                     "role": "system",
@@ -173,7 +173,7 @@ async def get_gpt_response(prompt: str) -> Dict:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=3000,
+            max_tokens=8192,
             presence_penalty=0.0,
             frequency_penalty=0.0
         )
