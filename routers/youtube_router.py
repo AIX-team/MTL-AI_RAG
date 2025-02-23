@@ -20,7 +20,7 @@ class SearchResponse(BaseModel):
             response_model=YouTubeResponse,
             summary="콘텐츠 분석",
             description="YouTube 영상, 네이버 블로그, 티스토리 등의 URL을 받아 내용을 분석하고 요약합니다.")
-async def process_content(request: ContentRequest, response: Response):
+async def process_content(request: ContentRequest):
     try:
         print(f"[요청 데이터] {request}")
         
@@ -52,10 +52,6 @@ async def process_content(request: ContentRequest, response: Response):
             "processing_time_seconds": result.get("processing_time_seconds", 0.0),
             "place_details": result.get("place_details", [])
         }
-        
-        # 응답 압축 설정
-        response.headers["Content-Encoding"] = "gzip"
-        response.headers["Vary"] = "Accept-Encoding"
         
         # 응답 생성
         youtube_response = YouTubeResponse(**response_data)
