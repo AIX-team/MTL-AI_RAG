@@ -10,8 +10,23 @@ class TravelPlannerService:
         
     async def generate_travel_plans(self, places: List[PlaceInfo], days: int, plan_type: str) -> List[TravelPlan]:
         try:
-            # plan_type을 직접 전달
-            prompt = info2guide_repository.create_travel_prompt(places, plan_type, days)
+            # places를 딕셔너리로 변환
+            places_dict = [{
+                'id': place.id,
+                'title': place.title,
+                'address': place.address,
+                'description': place.description,
+                'intro': place.intro,
+                'type': place.type,
+                'image': place.image,
+                'latitude': place.latitude,
+                'longitude': place.longitude,
+                'open_hours': place.open_hours if hasattr(place, 'open_hours') else None,
+                'phone': place.phone if hasattr(place, 'phone') else None,
+                'rating': place.rating if hasattr(place, 'rating') else None
+            } for place in places]
+
+            prompt = info2guide_repository.create_travel_prompt(places_dict, plan_type, days)
             response = await info2guide_repository.get_gpt_response(prompt)
             
             if not response or 'days' not in response:
