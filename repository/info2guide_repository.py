@@ -135,13 +135,13 @@ Day 2:
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
-        # GPT 모델 이름 수정 및 에러 처리 개선
+        # 올바른 메서드 사용: openai.ChatCompletion.create
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 일본 여행 전문가입니다. 주어진 장소들을 효율적으로 연결하여 최적의 여행 일정을 만드는 것이 특기입니다. 응답은 반드시 Day 1:, ID:, Place Name: 등의 형식으로 작성해주세요."
+                    "content": "당신은 일본 여행 전문가입니다. 주어진 장소들을 효율적으로 연결하여 최적의 여행 일정을 만드는 것이 특기입니다."
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -151,37 +151,26 @@ async def get_gpt_response(prompt: str) -> Dict:
             frequency_penalty=0.0
         )
         
-        if not response or not response.choices:
-            raise Exception("GPT API returned invalid response")
-            
         print("Received response from GPT")
         content = response.choices[0].message.content
-        if not content:
-            raise Exception("GPT response content is empty")
-            
         print(f"GPT Response Content: {content[:200]}...")
         
         parsed_response = parse_gpt_response(content)
-        if not parsed_response.get('days'):
-            raise Exception("Failed to parse GPT response into valid day plans")
-            
         print(f"Parsed Response: {parsed_response}")
         return parsed_response
-        
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
-        print(f"Full error details: {e.__class__.__name__}: {str(e)}")
-        raise Exception(f"GPT API 호출 실패: {str(e)}")  # 에러를 상위로 전파
+        return {'days': []}
 def parse_gpt_response(response_text: str) -> Dict:
+    """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
     try:
         print("Starting to parse response...")
         days = []
         current_day = None
         current_place = None
-        existing_days = set()
         
+        # 불필요한 기호 제거
         response_text = (response_text.replace('###', '')
-                                    .replace('##', '')
                                     .replace('**', '')
                                     .replace('- ', '')
                                     .replace('*', '')
@@ -190,94 +179,83 @@ def parse_gpt_response(response_text: str) -> Dict:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         
         for line in lines:
+            print(f"Processing line: {line}")
+            # Day 시작 감지
             if line.lower().startswith('day'):
                 if current_place and current_day:
                     current_day['places'].append(current_place)
-                    current_place = None
-                
+                if current_day:
+                    days.append(current_day)
                 try:
                     day_num = int(''.join(filter(str.isdigit, line)))
-                    if day_num in existing_days:
-                        current_day = next(day for day in days if day['day_number'] == day_num)
-                    else:
-                        if current_day:
-                            days.append(current_day)
-                        current_day = {'day_number': day_num, 'places': []}
-                        existing_days.add(day_num)
-                    print(f"Processing day: {day_num}")
+                    current_day = {'day_number': day_num, 'places': []}
+                    print(f"Created new day: {day_num}")
                 except Exception as e:
                     print(f"Error parsing day number: {e}")
+                current_place = None
                 continue
             
+            # ':'가 포함된 라인 처리
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
-                if key == 'id':
-                    if current_place and current_day:
-                        current_day['places'].append(current_place)
+                # current_place가 None이면 자동 생성
+                if current_place is None:
                     current_place = {
                         'id': '',
-                        'title': '',  # name -> title
+                        'name': '',
                         'address': '',
-                        'description': '',  # official_description -> description
-                        'intro': '',  # reviewer_description -> intro
-                        'type': '',  # place_type -> type
-                        'rating': 0.0,
-                        'image': '',  # image_url -> image
-                        'open_hours': '',  # business_hours -> open_hours
-                        'phone': '',
-                        'latitude': 0.0,
-                        'longitude': 0.0
+                        'official_description': '',
+                        'reviewer_description': '',
+                        'place_type': '',
+                        'rating': '0',
+                        'image_url': '',
+                        'business_hours': '',
+                        'website': '',
+                        'latitude': '',
+                        'longitude': ''
                     }
+                    print("Auto-created new place due to missing Place Name trigger.")
                 
-                if current_place is not None:
-                    if key == 'id':
-                        current_place['id'] = value
-                    elif key == 'place_name':
-                        current_place['title'] = value  # name -> title
-                    elif key == 'address':
-                        current_place['address'] = value
-                    elif key == 'official_description':
-                        current_place['description'] = value  # official_description -> description
-                    elif key in ['reviewer_description', "reviewer's_description"]:
-                        current_place['intro'] = value  # reviewer_description -> intro
-                    elif key == 'place_type':
-                        current_place['type'] = value  # place_type -> type
-                    elif key == 'rating':
-                        try:
-                            current_place['rating'] = float(value)
-                        except:
-                            current_place['rating'] = 0.0
-                    elif key in ['place_image_url', 'image_url']:
-                        if '(' in value and ')' in value:
-                            url = value[value.find('(')+1:value.find(')')]
-                            current_place['image'] = url  # image_url -> image
-                        else:
-                            current_place['image'] = value
-                    elif key in ['business_time', 'business_hours']:
-                        current_place['open_hours'] = value  # business_hours -> open_hours
-                    elif key == 'phone':
-                        current_place['phone'] = value
-                    elif key == 'location':
-                        try:
-                            lat, lon = value.split(',')
-                            current_place['latitude'] = float(lat.strip())  # 문자열 -> float
-                            current_place['longitude'] = float(lon.strip())  # 문자열 -> float
-                        except Exception as e:
-                            print(f"Error parsing location: {e}")
-                            current_place['latitude'] = 0.0
-                            current_place['longitude'] = 0.0
+                # 키에 따른 값 할당
+                if key == 'id':
+                    current_place['id'] = value
+                elif key == 'place_name':
+                    current_place['name'] = value
+                elif key == 'address':
+                    current_place['address'] = value
+                elif key == 'official_description':
+                    current_place['official_description'] = value
+                elif key == 'reviewer_description' or key == "reviewer's_description":
+                    current_place['reviewer_description'] = value
+                elif key == 'place_type':
+                    current_place['place_type'] = value
+                elif key == 'rating':
+                    current_place['rating'] = value
+                elif key in ['place_image_url', 'image_url']:
+                    current_place['image_url'] = value
+                elif key in ['business_time', 'business_hours']:
+                    current_place['business_hours'] = value
+                elif key == 'website':
+                    current_place['website'] = value
+                elif key == 'location':
+                    try:
+                        lat, lon = value.split(',')
+                        current_place['latitude'] = lat.strip()
+                        current_place['longitude'] = lon.strip()
+                    except Exception as e:
+                        print(f"Error parsing location: {e}")
+                        current_place['latitude'] = ''
+                        current_place['longitude'] = ''
+                print(f"Set {key} = {value}")
         
         if current_place and current_day:
             current_day['places'].append(current_place)
-        if current_day and current_day not in days:
+        if current_day:
             days.append(current_day)
             
         print(f"Final parsed days: {len(days)}")
-        for day in days:
-            print(f"Added day {day['day_number']} with {len(day['places'])} places")
-            
         return {'days': days}
     except Exception as e:
         print(f"Error parsing GPT response: {str(e)}")
