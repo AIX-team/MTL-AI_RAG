@@ -80,7 +80,18 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
     }
     
     return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
+[필수 규칙]
+1. 동선 최적화 (최우선 규칙)
+   - 같은 지역의 장소들을 하루에 묶어서 배치
+   - 이동 시간 최소화를 위해 근접한 장소끼리 순서 배치
+   - 지하철/버스 환승 횟수 최소화
+   - 하루 이동 거리 3시간 이내로 제한
 
+2. 일정 수 (스타일별)
+   - BUSY: 하루 4-5곳 방문
+   - NORMAL: 하루 3-4곳 방문
+   - RELAXED: 하루 2-3곳 방문
+   
 {balance_guide}
 
 [여행 스타일 정의]
