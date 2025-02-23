@@ -8,18 +8,24 @@ class TravelPlannerService:
     def __init__(self):
         openai.api_key = os.getenv("OPENAI_API_KEY")
         
-    async def generate_travel_plans(self, places: List[PlaceInfo], days: int) -> List[TravelPlan]:
-        plan_types = ['busy', 'normal', 'relaxed']
-        plans = []
-        for plan_type in plan_types:
-            try:
-                plan = await self._create_plan(places, days, plan_type)
-                plans.append(plan)
-                print(f"Generated {plan_type} plan with {len(plan.daily_plans)} days")
-            except Exception as e:
-                print(f"Error generating {plan_type} plan: {e}")
-                plans.append(TravelPlan(plan_type=plan_type, daily_plans=[]))
-        return plans
+    async def generate_travel_plans(self, places: List[PlaceInfo], days: int, travelTaste: str) -> TravelPlan:
+        # Map the travelTaste to a plan type
+        type_mapping = {
+            '빼곡한 일정 선호': 'busy',
+            '적당한 일정 선호': 'normal',
+            '널널한 일정 선호': 'relaxed'
+        }
+        plan_type = type_mapping.get(travelTaste)
+        if not plan_type:
+            # Fallback to normal if travelTaste is not recognized
+            plan_type = 'normal'
+        try:
+            plan = await self._create_plan(places, days, plan_type)
+            print(f"Generated {plan_type} plan with {len(plan.daily_plans)} days")
+            return plan
+        except Exception as e:
+            print(f"Error generating {plan_type} plan: {e}")
+            return TravelPlan(plan_type=plan_type, daily_plans=[])
     
     async def _create_plan(self, places: List[PlaceInfo], days: int, plan_type: str) -> TravelPlan:
         # 원본 PlaceInfo 객체들을 딕셔너리 리스트로 변환
