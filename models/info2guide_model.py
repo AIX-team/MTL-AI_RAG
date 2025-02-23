@@ -20,6 +20,7 @@ class PlaceInfo(BaseModel):
 class PlaceSelectRequest(BaseModel):
     travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
+    travel_taste: str = Field(..., alias="travelTaste")
 
 class PlaceDetail(BaseModel):
     id: str

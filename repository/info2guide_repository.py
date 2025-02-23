@@ -55,6 +55,30 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         for i, place in enumerate(places)
     ])
     
+    style_description = {
+        'busy': """
+[빼곡한 일정 선호 상세]
+- 하루 4곳 방문
+- 장소당 체류시간: 1-1.5시간
+- 이동시간: 30분 이내
+- 효율적인 동선 중시
+- 주요 관광지 위주""",
+        'normal': """
+[적당한 일정 선호 상세]
+- 하루 3곳 방문
+- 장소당 체류시간: 1.5-2시간
+- 이동시간: 40분 이내
+- 관광과 휴식 균형
+- 대중적인 코스""",
+        'relaxed': """
+[널널한 일정 선호 상세]
+- 하루 2곳 방문
+- 장소당 체류시간: 2-3시간
+- 이동시간: 제한 없음
+- 여유로운 일정
+- 문화체험 중심"""
+    }
+    
     return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
 
 {balance_guide}
