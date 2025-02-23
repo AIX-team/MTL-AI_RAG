@@ -135,13 +135,13 @@ Day 2:
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
-        # 올바른 메서드 사용: openai.ChatCompletion.create
+        # GPT 모델 이름 수정 및 에러 처리 개선
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 일본 여행 전문가입니다. 주어진 장소들을 효율적으로 연결하여 최적의 여행 일정을 만드는 것이 특기입니다."
+                    "content": "당신은 일본 여행 전문가입니다. 주어진 장소들을 효율적으로 연결하여 최적의 여행 일정을 만드는 것이 특기입니다. 응답은 반드시 Day 1:, ID:, Place Name: 등의 형식으로 작성해주세요."
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -151,16 +151,27 @@ async def get_gpt_response(prompt: str) -> Dict:
             frequency_penalty=0.0
         )
         
+        if not response or not response.choices:
+            raise Exception("GPT API returned invalid response")
+            
         print("Received response from GPT")
         content = response.choices[0].message.content
+        if not content:
+            raise Exception("GPT response content is empty")
+            
         print(f"GPT Response Content: {content[:200]}...")
         
         parsed_response = parse_gpt_response(content)
+        if not parsed_response.get('days'):
+            raise Exception("Failed to parse GPT response into valid day plans")
+            
         print(f"Parsed Response: {parsed_response}")
         return parsed_response
+        
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
-        return {'days': []}
+        print(f"Full error details: {e.__class__.__name__}: {str(e)}")
+        raise Exception(f"GPT API 호출 실패: {str(e)}")  # 에러를 상위로 전파
 def parse_gpt_response(response_text: str) -> Dict:
     """GPT 응답을 파싱하여 구조화된 데이터로 변환"""
     try:
