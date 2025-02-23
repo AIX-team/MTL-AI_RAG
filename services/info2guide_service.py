@@ -8,6 +8,11 @@ import numpy as np
 import random
 from math import ceil
 
+# 상수 정의
+CHUNK_SIZE = 2048  # 텍스트 청크 크기
+MODEL = "gpt-4o-mini"    # 사용할 GPT 모델
+MAX_TOKENS = 1500  # 최대 토큰 수
+
 class TravelPlannerService:
     def __init__(self):
         openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -235,17 +240,25 @@ class TextProcessingService:
     
     @staticmethod
     def split_text(text: str, max_chunk_size: int = CHUNK_SIZE) -> List[str]:
-        words = text.split()
-        total_words = len(words)
-        num_chunks = ceil(total_words / (max_chunk_size // 5))
-        chunks = []
-        for i in range(num_chunks):
-            start = i * (max_chunk_size // 5)
-            end = start + (max_chunk_size // 5)
-            chunk = ' '.join(words[start:end])
-            chunks.append(chunk)
-        print(f"[split_text] 총 단어 수: {total_words}, 청크 수: {num_chunks}")
-        return chunks
+        """텍스트를 청크로 분할"""
+        try:
+            words = text.split()
+            total_words = len(words)
+            num_chunks = ceil(total_words / (max_chunk_size // 5))
+            chunks = []
+            
+            for i in range(num_chunks):
+                start = i * (max_chunk_size // 5)
+                end = start + (max_chunk_size // 5)
+                chunk = ' '.join(words[start:end])
+                chunks.append(chunk)
+            
+            print(f"[split_text] 총 단어 수: {total_words}, 청크 수: {num_chunks}")
+            return chunks
+            
+        except Exception as e:
+            print(f"[split_text] 오류 발생: {str(e)}")
+            raise ValueError(f"텍스트 분할 중 오류 발생: {str(e)}")
 
     @staticmethod
     def _generate_prompt(text: str) -> str:
@@ -286,7 +299,7 @@ class TextProcessingService:
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.3,
-                    max_tokens=1500
+                    max_tokens=MAX_TOKENS
                 )
                 
                 summary = response.choices[0].message.content
