@@ -1088,87 +1088,76 @@ class YouTubeSubtitleService:
 class TextProcessingService:
     """텍스트 처리 서비스"""
     
-    @staticmethod
-    def split_text(text: str, max_chunk_size: int = CHUNK_SIZE) -> List[str]:
-        words = text.split()
-        total_words = len(words)
-        num_chunks = ceil(total_words / (max_chunk_size // 5))
-        chunks = []
-        for i in range(num_chunks):
-            start = i * (max_chunk_size // 5)
-            end = start + (max_chunk_size // 5)
-            chunk = ' '.join(words[start:end])
-            chunks.append(chunk)
-        print(f"[split_text] 총 단어 수: {total_words}, 청크 수: {num_chunks}")
-        return chunks
+    def split_text(self, text: str, max_chunk_size: int = 2048) -> List[str]:
+        """텍스트를 청크로 분할"""
+        try:
+            words = text.split()
+            total_words = len(words)
+            num_chunks = ceil(total_words / (max_chunk_size // 5))
+            chunks = []
+            
+            for i in range(num_chunks):
+                start = i * (max_chunk_size // 5)
+                end = start + (max_chunk_size // 5)
+                chunk = ' '.join(words[start:end])
+                chunks.append(chunk)
+            
+            print(f"[split_text] 총 단어 수: {total_words}, 청크 수: {num_chunks}")
+            return chunks
+            
+        except Exception as e:
+            print(f"[split_text] 오류 발생: {str(e)}")
+            raise ValueError(f"텍스트 분할 중 오류 발생: {str(e)}")
 
-    @staticmethod
-    def summarize_text(transcript_chunks: List[str], model: str = MODEL) -> str:
-        summaries = []
-        for idx, chunk in enumerate(transcript_chunks):
-            prompt = TextProcessingService._generate_prompt(chunk)
-            try:
+    def _generate_prompt(self, text: str) -> str:
+        """GPT 프롬프트 생성"""
+        return f"""다음 텍스트를 분석하여 여행 정보를 요약해주세요. 
+특히 다음 사항에 중점을 두어 요약해주세요:
+
+1. 방문한 장소들 (위치 정보 포함)
+2. 각 장소의 특징과 설명
+3. 추천 사항이나 주의 사항
+4. 시간대별 방문 정보 (있는 경우)
+
+텍스트:
+{text}
+
+다음 형식으로 응답해주세요:
+
+방문한 장소: [장소명] ([지역명])
+- 설명: [장소에 대한 설명]
+- 추천 사항: [있는 경우]
+- 주의 사항: [있는 경우]
+- 방문 시간: [언급된 경우]
+"""
+
+    def summarize_text(self, transcript_chunks: List[str], model: str = "gpt-4o-mini") -> str:
+        """텍스트 청크들을 요약"""
+        try:
+            summaries = []
+            for idx, chunk in enumerate(transcript_chunks):
+                print(f"[summarize_text] 청크 {idx+1}/{len(transcript_chunks)} 처리 중...")
+                
+                prompt = self._generate_prompt(chunk)
                 response = openai.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "You are a travel expert who provides detailed recommendations for places to visit, foods to eat, precautions, and suggestions based on transcripts."},
+                        {"role": "system", "content": "당신은 여행 전문가로서 여행 컨텐츠를 분석하고 유용한 정보를 추출하는 AI입니다."},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.1,
+                    temperature=0.3,
                     max_tokens=1500
                 )
+                
                 summary = response.choices[0].message.content
                 summaries.append(summary)
-                print(f"청크 {idx+1}/{len(transcript_chunks)} 요약 완료.")
-                print(f"[청크 {idx+1} 요약 내용 일부]")
-                print(summary[:9500])
-            except Exception as e:
-                raise ValueError(f"요약 중 오류 발생: {e}")
-
-        # 개별 요약을 합쳐서 최종 요약
-        combined_summaries = "\n".join(summaries)
-        final_prompt = f"""
-아래는 여러 청크로 나뉜 요약입니다. 이 요약들을 통합하여 다음의 형식으로 최종 요약을 작성해 주세요. 반드시 아래 형식을 따르고, 빠지는 내용 없이 모든 정보를 포함해 주세요.
-**요구 사항:**
-1. 자막에서 언급된 모든 장소를 찾아주세요. 다음과 같은 표현들을 모두 포함해야 합니다:
-   - "방문한 장소:"
-   - "목적지는"
-   - "~에 위치한"
-   - "~에 있는"
-   - "~로 갔다"
-   - "~를 방문했다"
-   - "~를 들렀다"
-   등 장소를 지칭하는 모든 표현
-
-2. 각 장소에 대해 다음 정보를 포함해 주세요:
-   - 장소명과 지역명
-   - 언급된 시간 (타임스탬프)
-   - 장소 설명 (유튜버가 언급한 내용)
-   - 먹은 음식 (있는 경우)
-   - 유의 사항 (있는 경우)
-   - 추천 사항 (있는 경우)
-
-3. 모든 장소는 반드시 구체적인 지역명과 함께 표시해주세요:
-   예: "오도리 공원 (삿포로)", "스카이트리 (도쿄)"
-
-4. 장소 설명은 반드시 유튜버가 실제로 언급한 내용을 바탕으로 작성해 주세요.
-
-**결과 형식:**
-방문한 장소: [장소명] ([지역명]) 타임스탬프: [HH:MM:SS]
-- 장소설명: [유튜버의 설명]
-- 먹은 음식: [음식명] (있는 경우만)
-    - 설명: [음식에 대한 설명]
-- 유의 사항: [주의할 점] (있는 경우만)
-    - 설명: [상세 설명]
-- 추천 사항: [추천 내용] (있는 경우만)
-    - 설명: [상세 설명]
-
-자막 내용:
-{transcript_chunk}
-"""
-        print("\n[generate_prompt] 생성된 프롬프트 일부:")
-        print(base_prompt[:500])
-        return base_prompt
+                print(f"[summarize_text] 청크 {idx+1} 요약 완료")
+            
+            return "\n\n".join(summaries)
+            
+        except Exception as e:
+            print(f"[summarize_text] 오류 발생: {str(e)}")
+            raise ValueError(f"텍스트 요약 중 오류 발생: {str(e)}")
 
 class PlaceService:
     """장소 정보 처리 서비스"""
