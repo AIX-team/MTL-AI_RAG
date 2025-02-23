@@ -45,6 +45,9 @@ class YouTubeRepository:
             
             print("✅ 벡터 DB 초기화 완료")
             
+            # 변경 후 코드:
+            self.MAX_TOTAL_SIZE = 10485760  # 10MB
+            
         except Exception as e:
             print(f"⚠️ 벡터 DB 초기화 실패: {str(e)}")
             self.vectordb = None
