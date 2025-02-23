@@ -379,10 +379,18 @@ class YouTubeService:
             
             # 장소 정보 수집
             place_details = []
-            for place_name in place_names:
+            for place_info in place_names:
                 try:
+                    # 장소명과 지역명 분리
+                    if " (" in place_info and ")" in place_info:
+                        place_name, area = place_info.split(" (")
+                        area = area.rstrip(")")
+                    else:
+                        place_name = place_info
+                        area = "일본"
+                    
                     # Google Places API로 장소 정보 검색
-                    places_result = self.gmaps.places(place_name)
+                    places_result = self.gmaps.places(f"{place_name} {area}")
                     if places_result['results']:
                         place = places_result['results'][0]
                         place_id = place['place_id']
@@ -427,14 +435,7 @@ class YouTubeService:
                     print(f"장소 정보 추가 완료: {place_name}")
                     
                 except Exception as e:
-                    print(f"장소 정보 처리 중 오류 발생 ({place_name}): {str(e)}")
-                    # 에러가 발생해도 기본 정보는 추가
-                    place_details.append(PlaceInfo(
-                        name=place_name,
-                        source_url=source_url,  # source_url 추가
-                        description=self._extract_place_description(summary, place_name),
-                        google_info={}
-                    ))
+                    print(f"장소 정보 처리 중 오류 발생 ({place_info}): {str(e)}")
                     continue
             
             return place_details
@@ -468,6 +469,14 @@ class YouTubeService:
             place_details = []
             for place_name in place_names:
                 try:
+                    # 장소명과 지역명 분리
+                    if " (" in place_name and ")" in place_name:
+                        place_name, area = place_name.split(" (")
+                        area = area.rstrip(")")
+                    else:
+                        place_name = place_name
+                        area = "일본"
+                    
                     # Google Places API로 장소 정보 검색
                     place_info = PlaceInfo(
                         name=place_name,
@@ -477,7 +486,7 @@ class YouTubeService:
                     )
                     
                     # Google Places API 검색 시도
-                    places_result = self.gmaps.places(place_name)
+                    places_result = self.gmaps.places(f"{place_name} {area}")
                     if places_result['results']:
                         place = places_result['results'][0]
                         place_id = place['place_id']
@@ -777,14 +786,7 @@ URL: {info.url}"""
             }
 
     def generate_final_summary(self, content_infos: List[ContentInfo], processing_time: float, place_details: List[PlaceInfo]) -> Dict[str, str]:
-        """최종 요약을 생성
-        다음 조건을 만족하는 장소 정보를 제공해주세요.
-
-1. 장소가 한국이 아니라 일본의 어느 지역에 위치한 경우에만 정보를 출력해주세요.
-2. 상호명이 없는 경우, 유튜버가 말한 지역(예: '도쿄') 내에서 해당 카테고리(예: 음식점, 관광지)에 맞는 유명한 곳을 추천해주세요.
-3. '도쿄'처럼 큰 지역이 언급되었을 경우, 가능한 한 구체적인 장소(예: '오다이바 거리', '신주쿠 골든가이')로 세분화하여 정보를 제공해주세요.
-4. 위도 및 경도가 없는 이미지는 제외하거나, 해당 장소에 대한 일반적인 설명을 제공해주세요.
-5. 중복된 장소는 제거하고, 가장 관련성이 높은 정보만 제공합니다."""
+        """최종 요약을 생성"""
         summaries = {}
         
         for content in content_infos:
@@ -808,7 +810,38 @@ URL: {info.url}"""
             # 현재 콘텐츠와 관련된 장소만 필터링
             content_places = [place for place in place_details if place.source_url == content.url]
             
-            for idx, place in enumerate(content_places, 1):
+            # 유효한 장소만 필터링
+            valid_places = []
+            for place in content_places:
+                # 1. 사진이 있는지 확인
+                has_photos = place.photos and len(place.photos) > 0
+                
+                # 2. 위도/경도가 있는지 확인
+                has_coordinates = (
+                    place.geometry and 
+                    place.geometry.latitude is not None and 
+                    place.geometry.longitude is not None
+                )
+                
+                # 3. 주소가 일본인지 확인
+                is_japan_address = (
+                    place.formatted_address and 
+                    ("日本" in place.formatted_address or 
+                     "Japan" in place.formatted_address or 
+                     "일본" in place.formatted_address)
+                )
+                
+                # 모든 조건을 만족하는 경우만 포함
+                if has_photos and has_coordinates and is_japan_address:
+                    valid_places.append(place)
+                else:
+                    print(f"장소 제외: {place.name}")
+                    print(f"- 사진 있음: {has_photos}")
+                    print(f"- 좌표 있음: {has_coordinates}")
+                    print(f"- 일본 주소: {is_japan_address}")
+            
+            # 유효한 장소들만 요약에 포함
+            for idx, place in enumerate(valid_places, 1):
                 summary += f"{idx}. {place.name}\n"
                 summary += "=" * 50 + "\n\n"
                 
@@ -816,10 +849,11 @@ URL: {info.url}"""
                 summary += "[유튜버/블로거의 리뷰]\n"
                 summary += f"장소설명: {place.description or '장소 설명을 찾을 수 없습니다.'}\n\n"
                 
-                # 구글 장소 정보가 있는 경우에만 추가
+                # 구글 장소 정보
                 if place.google_info:
                     summary += "[구글 장소 정보]\n"
                     summary += f"🏠 주소: {place.formatted_address or '정보 없음'}\n"
+                    summary += f"📍 좌표: ({place.geometry.latitude}, {place.geometry.longitude})\n"
                     summary += f"⭐ 평점: {place.rating or 'None'}\n"
                     summary += f"📞 전화: {place.phone or 'None'}\n"
                     summary += f"🌐 웹사이트: {place.website or 'None'}\n"
@@ -841,6 +875,10 @@ URL: {info.url}"""
                     summary += f"⭐ 베스트 리뷰: {place.best_review or '리뷰 없음'}\n"
                 
                 summary += "=" * 50 + "\n\n"
+            
+            # 유효한 장소가 없는 경우 메시지 추가
+            if not valid_places:
+                summary += "※ 유효한 장소 정보가 없습니다. (사진, 좌표, 일본 주소 중 하나 이상 누락)\n"
             
             summaries[content.url] = summary
         
@@ -1043,7 +1081,7 @@ class TextProcessingService:
 4. 추천 사항만 있는 것들은 추천 사항 섹션에 모아주세요.
 5. 가능한 장소 이름을 알고 있다면 실제 주소를 포함해 주세요.
 7. 본문 내에 언급된 모든 장소 (예: "도쿄 해리포터 스튜디오", "노보리베츠" 등)를 반드시 결과에 포함시켜 주세요.
-8. 주소가 포함된 경우 이를 제외하고, 일본 내 장소만 제공해야 합니다. "야키토리집"이라고만 언급된 경우에는 오사카 내의 야키토리집 중 하나의 주소를 찾아서 제공해 주세요
+8. 주소가 포함된 경우 이를 제외하고, 일본 내 장소만 제공해야 합니다. "야키토리집"이라고만 언급된 경우에는 오사카 내의 야키토리집 중 하나의 주소를 찾아서 제공해 주세요.
 9. 아카타 샤브샤브"와 같이 명확한 브랜드명이 언급되지 않은 경우, 지역 내 적합한 샤브샤브집 주소를 찾아서 제공해 주세요.
 
 **결과 형식:**
@@ -1105,32 +1143,14 @@ class TextProcessingService:
 3. 방문한 장소가 없거나 유의 사항만 있을 때, 유의 사항 섹션에 모아주세요.
 4. 추천 사항만 있는 것들은 추천 사항 섹션에 모아주세요.
 5. 가능한 장소 이름을 알고 있다면 실제 주소를 포함해 주세요.
-6. 장소 설명은 반드시 유튜버가 실제로 언급한 내용을 바탕으로 작성해 주세요. 유튜버의 실제 경험과 평가를 포함해야 합니다.
-7. 본문 내에 언급된 모든 장소 (예: "도쿄 해리포터 스튜디오", "노보리베츠" 등)를 반드시 결과에 포함시켜 주세요.
+6. 장소 설명은 반드시 유튜버가 실제로 언급한 내용을 바탕으로 작성해 주세요.
+7. 모든 장소는 반드시 구체적인 지역명(예: 도쿄, 오사카, 교토 등)과 함께 표시해주세요.
+   - 지역명을 알 수 있는 경우: "스카이트리 (도쿄)"
+   - 지역명을 알 수 없는 경우: "스카이트리 (일본)"
 
 **결과 형식:**
-
-결과는 아래 형식으로 작성해 주세요
-아래는 예시입니다. 
-
-방문한 장소: 스미다 타워 (주소) 타임스탬프: [HH:MM:SS]
-- 장소설명: [유튜버의 설명] 도쿄 스카이트리를 대표하는 랜드마크로, 전망대에서 도쿄 시내를 한눈에 볼 수 있습니다. 유튜버가 방문했을 때는 날씨가 좋아서 후지산까지 보였고, 야경이 특히 아름다웠다고 합니다.
-- 먹은 음식: 라멘 이치란
-    - 설명: 진한 국물과 쫄깃한 면발로 유명한 라멘 체인점으로, 개인실에서 편안하게 식사할 수 있습니다.
-- 유의 사항: 혼잡한 시간대 피하기
-    - 설명: 관광지 주변은 특히 주말과 휴일에 매우 혼잡할 수 있으므로, 가능한 평일이나 이른 시간에 방문하는 것이 좋습니다.
-- 추천 사항: 스카이 트리 전망대 방문
-    - 설명: 도쿄의 아름다운 야경을 감상할 수 있으며, 사진 촬영 하기에 최적의 장소입니다.
-
-방문한 장소: 유니버셜 스튜디오 일본 (주소) 타임스탬프: [HH:MM:SS]
-- 장소설명: [유튜버의 설명] 유튜버가 방문했을 때는 평일임에도 사람이 많았지만, 싱글라이더를 이용해서 대기 시간을 많이 줄일 수 있었습니다. 특히 해리포터 구역의 분위기가 실제 영화의 한 장면에 들어온 것 같았고, 버터맥주도 맛있었다고 합니다.
-- 유의 사항: 짧은 옷 착용 
-    - 설명: 팀랩 플래닛의 일부 구역에서는 물이 높고 거울이 있으므로, 짧은 옷을 입는 것이 좋다.
-
-**자막:**
-{transcript_chunk}
-
-위 자막을 바탕으로 위의 요구 사항에 맞는 정보를 작성해 주세요. 특히 장소 설명은 반드시 유튜버가 실제로 언급한 내용과 경험을 바탕으로 작성해 주세요.
+방문한 장소: [장소명] ([지역명]) 타임스탬프: [HH:MM:SS]
+...
 """
         print("\n[generate_prompt] 생성된 프롬프트 일부:")
         print(base_prompt[:500])
@@ -1166,16 +1186,20 @@ class PlaceService:
         return result
 
     @staticmethod
-    def search_place_details(place_name: str) -> Dict[str, Any]:
+    def search_place_details(place_name: str, area: str = None) -> Dict[str, Any]:
         """Google Places API를 사용하여 장소 정보를 검색"""
         try:
             gmaps = googlemaps.Client(key=os.getenv("GOOGLE_PLACES_API_KEY"))
             
+            # 지역명이 있으면 장소명과 함께 검색, 없으면 '일본'을 추가
+            search_query = f"{place_name} {area if area else '일본'}"
+            print(f"[search_place_details] 검색어: {search_query}")
+            
             # 장소 검색
-            places_result = gmaps.places(place_name)
+            places_result = gmaps.places(search_query)
             
             if not places_result['results']:
-                print(f"[search_place_details] 장소를 찾을 수 없음: {place_name}")
+                print(f"[search_place_details] 장소를 찾을 수 없음: {search_query}")
                 return None
                 
             place = places_result['results'][0]
@@ -1206,7 +1230,7 @@ class PlaceService:
             }
             
         except Exception as e:
-            print(f"[search_place_details] 장소 정보 검색 중 오류 발생 ({place_name}): {str(e)}")
+            print(f"[search_place_details] 장소 정보 검색 중 오류 발생 ({search_query}): {str(e)}")
             return None
 
     @staticmethod
