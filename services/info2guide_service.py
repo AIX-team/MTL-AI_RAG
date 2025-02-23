@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 import openai
 from models.info2guide_model import PlaceInfo, PlaceDetail, DayPlan, TravelPlan
 from repository import info2guide_repository

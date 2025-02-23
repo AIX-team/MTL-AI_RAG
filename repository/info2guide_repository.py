@@ -89,13 +89,28 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
-        # 올바른 메서드 사용: openai.ChatCompletion.create
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "당신은 일본 여행 전문가입니다. 주어진 장소들을 효율적으로 연결하여 최적의 여행 일정을 만드는 것이 특기입니다."
+                    "content": """당신은 일본 여행 전문가입니다. 다음 형식으로 응답해주세요:
+Day 1:
+Place Name: [장소명]
+ID: [장소ID]
+Address: [주소]
+Official Description: [공식설명]
+Reviewer Description: [리뷰]
+Place Type: [장소유형]
+Rating: [평점]
+Image URL: [이미지URL]
+Business Hours: [영업시간]
+Location: [위도], [경도]
+
+[다음 장소...]
+
+Day 2:
+[같은 형식 반복]"""
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -110,11 +125,14 @@ async def get_gpt_response(prompt: str) -> Dict:
         print(f"GPT Response Content: {content[:200]}...")
         
         parsed_response = parse_gpt_response(content)
-        print(f"Parsed Response: {parsed_response}")
+        if not parsed_response.get('days'):
+            print("No days in parsed response")
+            raise ValueError("GPT response parsing failed - no days found")
+            
         return parsed_response
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
-        return {'days': []}
+        raise Exception(f"GPT 응답 처리 중 오류 발생: {str(e)}")
 
 def parse_gpt_response(response_text: str) -> Dict:
     """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
