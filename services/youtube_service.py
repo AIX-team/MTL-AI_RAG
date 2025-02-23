@@ -21,10 +21,8 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, No
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from fastapi import APIRouter, HTTPException, status
-import asyncio
-import aiohttp
-from asyncio import Semaphore
-import httpx
+
+
 
 from ai_api.youtube_subtitle import (
     get_video_info, process_link, split_text, summarize_text,
@@ -253,49 +251,77 @@ class YouTubeService:
         except Exception as e:
             raise ValueError(f"Google Maps 클라이언트 초기화 실패: {str(e)}")
 
-        # 동시성 제어를 위한 세마포어 추가
-        self.semaphore = Semaphore(10)  # 최대 10개의 동시 요청 허용
-        self.session = None
-
-    async def get_session(self) -> aiohttp.ClientSession:
-        """비동기 HTTP 세션 반환"""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
-        return self.session
-
-    async def process_urls(self, urls: List[str]) -> Dict:
+    def process_urls(self, urls: List[str]) -> Dict:
+        """URL 목록을 처리하여 각각의 요약을 생성"""
         try:
             content_infos = []
             place_details = []
             start_time = time.time()
-            
-            # 비동기 작업 목록 생성
-            tasks = []
-            async with aiohttp.ClientSession() as session:
-                for url in urls:
-                    task = self.process_single_url(url, session)
-                    tasks.append(task)
-                
-                # 모든 작업 동시 실행
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # 결과 처리
-                for result in results:
-                    if isinstance(result, Exception):
-                        print(f"URL 처리 중 오류 발생: {str(result)}")
-                        continue
-                    
-                    if result:
-                        content_info, places = result
+
+            for url in urls:
+                parsed_url = urlparse(url)
+                if 'youtube.com' in parsed_url.netloc:
+                    # YouTube 영상 처리
+                    video_id = parse_qs(parsed_url.query).get('v', [None])[0]
+                    if video_id:
+                        # 비디오 정보 가져오기
+                        video_info = self._get_video_info(video_id)
+                        content_info = ContentInfo(
+                            url=url,
+                            title=video_info.title,
+                            author=video_info.channel,
+                            platform=ContentType.YOUTUBE
+                        )
                         content_infos.append(content_info)
-                        place_details.extend(places)
+                        
+                        # 장소 정보 추출 (source_url 포함)
+                        video_places = self._process_youtube_video(video_id, url)
+                        place_details.extend(video_places)
+                        print(f"YouTube 영상 '{video_info.title}'에서 추출된 장소: {len(video_places)}개")
+                
+                elif 'blog.naver.com' in parsed_url.netloc:
+                    # 네이버 블로그 제목 및 작성자 정보 가져오기
+                    title, author = self.content_service._get_naver_blog_info(url)
+
+                    # 네이버 블로그 본문 가져오기
+                    content = self.content_service.process_content(url)  # 여기서 _get_naver_blog_content 함수가 호출됨
+                    # 본문을 청크로 나누기
+                    chunks = self.text_service.split_text(content)
+                    # 청크들을 요약해서 최종 요약 생성
+                    summary = self.text_service.summarize_text(chunks)
+
+                    # 네이버 블로그 콘텐츠 정보 저장
+                    content_info = ContentInfo(
+                        url=url,
+                        title=title,
+                        author=author,
+                        platform=ContentType.NAVER_BLOG
+                    )
+                    content_infos.append(content_info)
+
+                    # (원하는 경우) 요약된 결과를 추가적으로 활용할 수도 있습니다.
+                    # 예를 들어, summary를 로그로 남기거나 최종 결과에 포함시키기
+
+                    # 네이버 블로그에서 장소 정보 추출
+                    blog_places = self._process_naver_blog(url)
+                    place_details.extend(blog_places)
+
+                    print(f"네이버 블로그 '{title}'에서 추출된 장소: {len(blog_places)}개")
+
 
             processing_time = time.time() - start_time
 
-            # 최종 요약 생성
+            # URL별로 장소 정보 그룹화
+            url_places = {}
+            for place in place_details:
+                if place.source_url not in url_places:
+                    url_places[place.source_url] = []
+                url_places[place.source_url].append(place)
+
+            # 최종 요약 생성 (URL별로 구분된 장소 정보 포함)
             summaries = {}
             for content in content_infos:
-                places = [p for p in place_details if p.source_url == content.url]
+                places = url_places.get(content.url, [])
                 summary = self._format_final_result(
                     content_infos=[content],
                     place_details=places,
@@ -303,10 +329,29 @@ class YouTubeService:
                     urls=[content.url]
                 )
                 summaries[content.url] = summary
+                print(f"'{content.title}' 요약 생성 완료 (장소 {len(places)}개 포함)")
 
-            # 벡터 DB와 파일에 비동기 저장
-            await self.repository.save_to_vectordb(summaries, content_infos, place_details)
-            await self.repository.save_final_summary(summaries, content_infos)
+            # 벡터 DB와 파일에 저장
+            try:
+                # 벡터 DB에 저장
+                self.repository.save_to_vectordb(summaries, content_infos, place_details)
+                print("✅ 벡터 DB 저장 완료")
+                
+                # 파일로 저장
+                saved_paths = self.repository.save_final_summary(summaries, content_infos)
+                print(f"✅ 파일 저장 완료: {len(saved_paths)}개 파일")
+                
+                # URL별 저장 결과 로그
+                for content in content_infos:
+                    places_count = len(url_places.get(content.url, []))
+                    print(f"URL: {content.url}")
+                    print(f"- 제목: {content.title}")
+                    print(f"- 플랫폼: {content.platform.value}")
+                    print(f"- 추출된 장소 수: {places_count}")
+                    print("-" * 50)
+                
+            except Exception as e:
+                print(f"저장 중 오류 발생: {str(e)}")
 
             return {
                 "summary": summaries,
@@ -317,159 +362,6 @@ class YouTubeService:
 
         except Exception as e:
             raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
-
-    async def process_single_url(self, url: str, session: aiohttp.ClientSession) -> Tuple[ContentInfo, List[PlaceInfo]]:
-        """단일 URL 비동기 처리"""
-        async with self.semaphore:  # 동시성 제어
-            try:
-                parsed_url = urlparse(url)
-                if 'youtube.com' in parsed_url.netloc:
-                    return await self._process_youtube_url(url, session)
-                elif 'blog.naver.com' in parsed_url.netloc:
-                    return await self._process_naver_blog_url(url, session)
-                # 다른 URL 타입 처리...
-            except Exception as e:
-                print(f"URL 처리 중 오류: {str(e)}")
-                raise
-
-    async def _process_youtube_url(self, url: str, session: aiohttp.ClientSession) -> Tuple[ContentInfo, List[PlaceInfo]]:
-        """YouTube URL 비동기 처리"""
-        video_id = parse_qs(urlparse(url).query).get('v', [None])[0]
-        if not video_id:
-            raise ValueError("잘못된 YouTube URL")
-
-        # 비디오 정보 비동기 요청
-        video_info = await self._get_video_info_async(video_id, session)
-        content_info = ContentInfo(
-            url=url,
-            title=video_info.title,
-            author=video_info.channel,
-            platform=ContentType.YOUTUBE
-        )
-
-        # 자막 및 장소 정보 비동기 처리
-        transcript = await self._get_youtube_transcript_async(video_id)
-        places = await self._process_youtube_video_async(video_id, url, transcript)
-
-        return content_info, places
-
-    async def _get_video_info_async(self, video_id: str, session: aiohttp.ClientSession) -> VideoInfo:
-        """비디오 정보 비동기 요청"""
-        api_url = f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}"
-        try:
-            async with session.get(api_url) as response:
-                # 응답 텍스트를 먼저 가져옴
-                text = await response.text()
-                try:
-                    # 텍스트를 JSON으로 파싱
-                    import json
-                    data = json.loads(text)
-                    return VideoInfo(
-                        url=f"https://www.youtube.com/watch?v={video_id}",
-                        title=data.get('title'),
-                        channel=data.get('author_name')
-                    )
-                except json.JSONDecodeError:
-                    print(f"JSON 파싱 실패: {text[:200]}")  # 처음 200자만 로그로 출력
-                
-        except Exception as e:
-            print(f"비디오 정보 요청 실패: {str(e)}")
-        
-        # 실패 시 기본값 반환
-        return VideoInfo(
-            url=f"https://www.youtube.com/watch?v={video_id}",
-            title="제목을 가져올 수 없음",
-            channel="채널 정보를 가져올 수 없음"
-        )
-
-    async def _get_youtube_transcript_async(self, video_id: str) -> str:
-        """YouTube 자막을 비동기적으로 가져옴"""
-        try:
-            # YouTubeTranscriptApi는 비동기를 지원하지 않으므로 ThreadPool에서 실행
-            loop = asyncio.get_event_loop()
-            transcript_text = await loop.run_in_executor(None, self._get_youtube_transcript, video_id)
-            return transcript_text
-        except Exception as e:
-            print(f"자막 가져오기 실패: {str(e)}")
-            return ""
-
-    async def _process_youtube_video_async(self, video_id: str, source_url: str, transcript_text: str) -> List[PlaceInfo]:
-        """YouTube 영상을 비동기적으로 처리하여 장소 정보를 수집"""
-        try:
-            # 텍스트 분할 및 요약
-            chunks = self.text_service.split_text(transcript_text)
-            summary = self.text_service.summarize_text(chunks)
-            
-            # 장소 추출 및 정보 수집
-            place_names = self.place_service.extract_place_names(summary)
-            print(f"추출된 장소: {place_names}")
-            
-            # 장소 정보 수집
-            place_details = []
-            for place_name in place_names:
-                try:
-                    # Google Places API 호출은 비동기로 처리
-                    loop = asyncio.get_event_loop()
-                    places_result = await loop.run_in_executor(
-                        None, self.gmaps.places, place_name
-                    )
-                    
-                    if places_result['results']:
-                        place = places_result['results'][0]
-                        place_id = place['place_id']
-                        
-                        # 장소 상세 정보 가져오기
-                        details = await loop.run_in_executor(
-                            None, 
-                            lambda: self.gmaps.place(place_id, language='ko')['result']
-                        )
-                        
-                        # 장소 타입과 좌표 정보 추출
-                        place_type = details.get('types', ['unknown'])[0]
-                        location = details.get('geometry', {}).get('location', {})
-                        geometry = PlaceGeometry(
-                            latitude=location.get('lat'),
-                            longitude=location.get('lng')
-                        )
-                        
-                        place_info = PlaceInfo(
-                            name=place_name,
-                            source_url=source_url,
-                            type=place_type,
-                            geometry=geometry,
-                            description=self._extract_place_description(summary, place_name),
-                            official_description=await loop.run_in_executor(
-                                None,
-                                self._get_place_description_from_openai,
-                                place_name,
-                                place_type
-                            ),
-                            formatted_address=details.get('formatted_address'),
-                            rating=details.get('rating'),
-                            phone=details.get('formatted_phone_number'),
-                            website=details.get('website'),
-                            price_level=details.get('price_level'),
-                            opening_hours=details.get('opening_hours', {}).get('weekday_text'),
-                            google_info=details
-                        )
-                        
-                        # 사진 URL 추가
-                        if 'photos' in details:
-                            photo_ref = details['photos'][0]['photo_reference']
-                            photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={os.getenv('GOOGLE_PLACES_API_KEY')}"
-                            place_info.photos = [PlacePhoto(url=photo_url)]
-                        
-                        place_details.append(place_info)
-                        
-                except Exception as e:
-                    print(f"장소 정보 처리 중 오류 발생 ({place_name}): {str(e)}")
-                    continue
-            
-            return place_details
-            
-        except Exception as e:
-            print(f"YouTube 영상 처리 중 오류 발생: {str(e)}")
-            return []
 
     def _process_youtube_video(self, video_id: str, source_url: str) -> List[PlaceInfo]:
         """YouTube 영상을 처리하여 장소 정보를 수집"""
@@ -769,41 +661,102 @@ URL: {info.url}"""
     def _get_youtube_transcript(video_id: str) -> str:
         """YouTube 영상의 자막을 가져옴"""
         try:
+            print(f"\n=== 자막 추출 시작: {video_id} ===")
             transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
             
-            # 1. 먼저 한국어 자막 시도
+            # 1. 한국어 자막 시도
             try:
                 transcript = transcripts.find_transcript(['ko'])
-                transcript_text = "\n".join([f"[{YouTubeService._format_timestamp(entry['start'])}] {entry['text']}" 
-                                           for entry in transcript.fetch()])
-                print(f"[get_youtube_transcript] 한국어 자막 추출 완료. 길이: {len(transcript_text)}")
-                return transcript_text
-            except (TranscriptsDisabled, NoTranscriptFound):
-                print("[get_youtube_transcript] 한국어 자막 없음.")
+                transcript_list = transcript.fetch()
+                print("✅ 한국어 자막 찾음")
+                
+                # 자막 텍스트 구성
+                transcript_text = []
+                for entry in transcript_list:
+                    timestamp = YouTubeService._format_timestamp(entry['start'])
+                    text = entry['text'].strip()
+                    if text:  # 빈 텍스트가 아닌 경우만 추가
+                        transcript_text.append(f"[{timestamp}] {text}")
+                
+                result = "\n".join(transcript_text)
+                print(f"📝 추출된 한국어 자막 길이: {len(result)} 자")
+                print("=== 자막 일부 ===")
+                print(result[:500])  # 처음 500자만 출력
+                return result
+                
+            except (TranscriptsDisabled, NoTranscriptFound) as e:
+                print(f"⚠️ 한국어 자막 없음: {str(e)}")
 
-            # 2. 영어 자막 시도
+            # 2. 자동 생성된 한국어 자막 시도
+            try:
+                transcript = transcripts.find_generated_transcript(['ko'])
+                transcript_list = transcript.fetch()
+                print("✅ 자동 생성된 한국어 자막 찾음")
+                
+                transcript_text = []
+                for entry in transcript_list:
+                    timestamp = YouTubeService._format_timestamp(entry['start'])
+                    text = entry['text'].strip()
+                    if text:
+                        transcript_text.append(f"[{timestamp}] {text}")
+                
+                result = "\n".join(transcript_text)
+                print(f"�� 추출된 자동 생성 한국어 자막 길이: {len(result)} 자")
+                print("=== 자막 일부 ===")
+                print(result[:500])
+                return result
+                
+            except Exception as e:
+                print(f"⚠️ 자동 생성된 한국어 자막 없음: {str(e)}")
+
+            # 3. 영어 자막을 한국어로 번역
             try:
                 transcript = transcripts.find_transcript(['en'])
-                transcript_text = "\n".join([f"[{YouTubeService._format_timestamp(entry['start'])}] {entry['text']}" 
-                                           for entry in transcript.fetch()])
-                print(f"[get_youtube_transcript] 영어 자막 추출 완료. 길이: {len(transcript_text)}")
-                return transcript_text
-            except (TranscriptsDisabled, NoTranscriptFound):
-                print("[get_youtube_transcript] 영어 자막 없음.")
-
-            # 3. 사용 가능한 첫 번째 자막 시도
-            try:
-                transcript = transcripts.find_generated_transcript()
-                transcript_text = "\n".join([f"[{YouTubeService._format_timestamp(entry['start'])}] {entry['text']}" 
-                                           for entry in transcript.fetch()])
-                print(f"[get_youtube_transcript] 생성된 자막 추출 완료. 길이: {len(transcript_text)}")
-                return transcript_text
+                transcript_list = transcript.fetch()
+                print("✅ 영어 자막 찾음")
+                
+                # 영어 자막 텍스트 구성
+                en_texts = []
+                timestamps = []
+                for entry in transcript_list:
+                    timestamp = YouTubeService._format_timestamp(entry['start'])
+                    text = entry['text'].strip()
+                    if text:
+                        en_texts.append(text)
+                        timestamps.append(timestamp)
+                
+                # OpenAI를 사용하여 한국어로 번역
+                combined_text = " ".join(en_texts)
+                response = openai.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a professional translator specializing in Korean travel content."},
+                        {"role": "user", "content": f"Translate the following English text to Korean, maintaining the travel-related context:\n\n{combined_text}"}
+                    ],
+                    temperature=0.3
+                )
+                
+                translated_text = response.choices[0].message.content
+                
+                # 번역된 텍스트를 타임스탬프와 결합
+                result = f"[번역된 자막]\n"
+                sentences = translated_text.split('. ')
+                for i, (timestamp, sentence) in enumerate(zip(timestamps, sentences)):
+                    if sentence.strip():
+                        result += f"[{timestamp}] {sentence.strip()}\n"
+                
+                print(f"📝 번역된 자막 길이: {len(result)} 자")
+                print("=== 번역된 자막 일부 ===")
+                print(result[:500])
+                return result
+                
             except Exception as e:
-                print(f"[get_youtube_transcript] 생성된 자막 추출 실패: {e}")
+                print(f"⚠️ 영어 자막 변환 실패: {str(e)}")
 
             raise ValueError("사용 가능한 자막을 찾을 수 없습니다.")
 
         except Exception as e:
+            print(f"❌ 자막 추출 실패: {str(e)}")
             raise ValueError(f"비디오 {video_id}의 자막을 가져오는데 실패했습니다: {e}")
 
     @staticmethod
