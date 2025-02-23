@@ -19,32 +19,52 @@ class SearchResponse(BaseModel):
             summary="콘텐츠 분석",
             description="YouTube 영상, 네이버 블로그, 티스토리 등의 URL을 받아 내용을 분석하고 요약합니다.")
 async def process_content(request: ContentRequest):
-    urls = [str(url) for url in request.urls]
-    
-    # URL 개수 검증
-    if not (1 <= len(urls) <= 5):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="URL의 개수는 최소 1개에서 최대 5개여야 합니다."
-        )
-    
     try:
-        result = await youtube_service.process_urls(urls)
-        # 결과가 올바른 형식인지 확인
-        if not isinstance(result["summary"], dict):
-            raise ValueError("최종 요약이 딕셔너리 형식이 아닙니다.")
+        print(f"Received request: {request}")
+        # process_urls 메서드 호출 시 await 사용
+        result = await youtube_service.process_urls(request.urls)
         
-        # YouTubeResponse 모델에 맞게 결과 구조화
-        return YouTubeResponse(
-            summary=result["summary"],
-            content_infos=result["content_infos"],
-            processing_time_seconds=result["processing_time_seconds"],
-            place_details=result["place_details"]
+        # 응답 형식 검증
+        if not isinstance(result, dict):
+            raise ValueError("결과가 딕셔너리 형식이 아닙니다")
+            
+        # 필수 필드 확인
+        required_fields = ["summary", "content_infos", "processing_time_seconds", "place_details"]
+        missing_fields = [field for field in required_fields if field not in result]
+        if missing_fields:
+            raise ValueError(f"결과에 필수 필드가 누락되었습니다: {missing_fields}")
+            
+        # None 값 처리
+        response_data = {
+            "summary": result.get("summary", {}),
+            "content_infos": result.get("content_infos", []),
+            "processing_time_seconds": result.get("processing_time_seconds", 0.0),
+            "place_details": result.get("place_details", [])
+        }
+        
+        # 응답 생성
+        response = YouTubeResponse(**response_data)
+        
+        print(f"Sending response: {response}")
+        return response
+        
+    except ValueError as ve:
+        print(f"Validation error: {str(ve)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
         )
     except Exception as e:
+        print(f"Processing error: {str(e)}")
+        print(f"Error type: {type(e)}")
+        print(f"Error details: {e.__dict__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"처리 중 오류가 발생했습니다: {str(e)}"
+            detail={
+                "error": "내부 서버 오류",
+                "message": str(e),
+                "type": str(type(e))
+            }
         )
 
 @router.post("/vectorsearch", response_model=List[SearchResponse])
