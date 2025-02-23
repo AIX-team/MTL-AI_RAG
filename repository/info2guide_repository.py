@@ -41,14 +41,14 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
 
     place_details = "\n".join([
         f"Place {i+1}:\n"
-        f"ID: {place.id}\n"
-        f"Name: {place.title}\n"
-        f"Address: {place.address}\n"
-        f"Description: {place.description}\n"
-        f"Type: {place.type}\n"
-        f"Opening Hours: {place.open_hours if hasattr(place, 'open_hours') else ''}\n"
-        f"Image: {place.image}\n"
-        f"Location: {place.latitude}, {place.longitude}\n"
+        f"ID: {place['id']}\n"
+        f"Name: {place['title']}\n"
+        f"Address: {place['address']}\n"
+        f"Description: {place['description']}\n"
+        f"Type: {place['type']}\n"
+        f"Opening Hours: {place.get('open_hours', '')}\n"
+        f"Image: {place['image']}\n"
+        f"Location: {place['latitude']}, {place['longitude']}\n"
         for i, place in enumerate(places)
     ])
     
