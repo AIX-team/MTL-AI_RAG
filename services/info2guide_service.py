@@ -41,30 +41,100 @@ class TravelPlannerService:
             
             # 각 장소를 PlaceDetail 객체로 변환
             daily_plans = []
-            for day in plan.daily_plans:
+            for day_data in plan.daily_plans:
                 places_list = []
-                for place in day.places:
-                    place_detail = PlaceDetail(
-                        id=place.id,
-                        title=place.title,
-                        address=place.address,
-                        description=place.description,
-                        intro=place.intro,
-                        type=place.type,
-                        rating=Decimal(str(place.rating if place.rating else 0)),
-                        image=place.image,
-                        open_hours=place.open_hours or '',
-                        phone=place.phone,
-                        latitude=float(place.latitude),
-                        longitude=float(place.longitude)
-                    )
-                    places_list.append(place_detail)
+                for place_data in day_data.places:
+                    try:
+                        # 원본 places 리스트에서 일치하는 장소 찾기
+                        original_place = next(
+                            (p for p in places if p.id == place_data.id),
+                            None
+                        )
+                        
+                        # 원본 장소를 찾은 경우 해당 데이터 사용, 아니면 GPT 응답 데이터 사용
+                        if original_place:
+                            place_detail = PlaceDetail(
+                                id=original_place.id,
+                                title=original_place.title,
+                                address=original_place.address,
+                                description=original_place.description,
+                                intro=original_place.intro,
+                                type=original_place.type,
+                                rating=Decimal(str(original_place.rating if original_place.rating else 0)),
+                                image=original_place.image,
+                                open_hours=original_place.open_hours or '',
+                                phone=original_place.phone,
+                                latitude=float(original_place.latitude),
+                                longitude=float(original_place.longitude)
+                            )
+                        else:
+                            place_detail = PlaceDetail(
+                                id=place_data.id,
+                                title=place_data.title,
+                                address=place_data.address,
+                                description=place_data.description,
+                                intro=place_data.intro,
+                                type=place_data.type,
+                                rating=Decimal(str(place_data.rating if place_data.rating else 0)),
+                                image=place_data.image,
+                                open_hours=place_data.open_hours or '',
+                                phone=place_data.phone,
+                                latitude=float(place_data.latitude),
+                                longitude=float(place_data.longitude)
+                            )
+                        places_list.append(place_detail)
+                    except Exception as e:
+                        print(f"Error creating PlaceDetail: {e}")
+                        continue
                 
-                day_plan = DayPlan(
-                    day_number=day.day_number,
-                    places=places_list
-                )
-                daily_plans.append(day_plan)
+                if places_list:  # 최소한 하나의 장소가 있는 경우에만 일정 추가
+                    day_plan = DayPlan(
+                        day_number=day_data.day_number,
+                        places=places_list
+                    )
+                    daily_plans.append(day_plan)
+            
+            # 일정이 비어있는 경우 기본 일정 생성
+            if not daily_plans:
+                print("Creating default plan from original places")
+                places_per_day = min(len(places), {'busy': 4, 'normal': 3, 'relaxed': 2}[plan_type.lower()])
+                
+                for day in range(1, days + 1):
+                    start_idx = (day - 1) * places_per_day
+                    end_idx = start_idx + places_per_day
+                    day_places = places[start_idx:end_idx]
+                    
+                    if not day_places:
+                        break
+                        
+                    places_list = []
+                    for place in day_places:
+                        try:
+                            place_detail = PlaceDetail(
+                                id=place.id,
+                                title=place.title,
+                                address=place.address,
+                                description=place.description,
+                                intro=place.intro,
+                                type=place.type,
+                                rating=Decimal(str(place.rating if place.rating else 0)),
+                                image=place.image,
+                                open_hours=place.open_hours or '',
+                                phone=place.phone,
+                                latitude=float(place.latitude),
+                                longitude=float(place.longitude)
+                            )
+                            places_list.append(place_detail)
+                        except Exception as e:
+                            print(f"Error creating default PlaceDetail: {e}")
+                            continue
+                    
+                    if places_list:
+                        day_plan = DayPlan(
+                            day_number=day,
+                            places=places_list
+                        )
+                        daily_plans.append(day_plan)
             
             return TravelPlan(
                 plan_type=plan_type,
