@@ -20,7 +20,7 @@ class PlaceInfo(BaseModel):
 class PlaceSelectRequest(BaseModel):
     travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
-    travelTaste: str = Field(..., alias="travelTaste")
+    travelTaste: str = Field(default="적당한 일정 선호", alias="travelTaste")  # 기본값 설정
 
 class PlaceDetail(BaseModel):
     id: str
