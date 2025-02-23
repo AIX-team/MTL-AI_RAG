@@ -3,6 +3,7 @@ import openai
 from models.info2guide_model import PlaceInfo, PlaceDetail, DayPlan, TravelPlan
 from repository import info2guide_repository
 import os
+import random
 
 class TravelPlannerService:
     def __init__(self):
@@ -110,24 +111,54 @@ class TravelPlannerService:
             print(f"Error generating travel plans: {e}")
             return self._create_default_plan(places, days, plan_type)
 
+    def _get_places_per_day(self, plan_type: str, remaining_count: int) -> int:
+        """여행 스타일에 따른 하루 장소 수 반환
+        remaining_count: 남은 총 장소 수를 고려하여 범위 내에서 결정
+        """
+        ranges = {
+            'busy': (4, 5),     # 빼곡한 일정: 하루 4-5곳
+            'normal': (3, 4),   # 적당한 일정: 하루 3-4곳
+            'relaxed': (2, 3)   # 널널한 일정: 하루 2-3곳
+        }
+        
+        plan_range = ranges.get(plan_type.lower(), (3, 4))  # 기본값은 normal
+        min_places, max_places = plan_range
+        
+        # 남은 장소 수가 최소값보다 적으면 남은 만큼만 반환
+        if remaining_count < min_places:
+            return remaining_count
+        
+        # 랜덤하게 범위 내의 값 선택
+        return random.randint(min_places, min(max_places, remaining_count))
+
     def _create_default_plan(self, places: List[PlaceInfo], days: int, plan_type: str) -> List[TravelPlan]:
         """GPT가 실패하거나 빈 응답을 줄 경우 기본 일정 생성"""
-        total_places = len(places)
-        places_per_day = total_places // days
-        if places_per_day == 0:
-            places_per_day = 1
-        
-        daily_plans = []
         remaining_places = list(places)
+        daily_plans = []
         
         for day_num in range(1, days + 1):
-            places_for_day = remaining_places[:places_per_day]
-            remaining_places = remaining_places[places_per_day:]
+            # 남은 장소가 없으면 중단
+            if not remaining_places:
+                break
             
-            if places_for_day:  # 해당 날짜에 배정할 장소가 있는 경우만 일정 추가
+            # 해당 일자에 배정할 장소 수 결정
+            places_for_today = self._get_places_per_day(
+                plan_type, 
+                len(remaining_places)
+            )
+            
+            # 장소 선택 (평점 순으로 정렬하여 선택)
+            selected_places = sorted(
+                remaining_places[:places_for_today], 
+                key=lambda p: p.rating if hasattr(p, 'rating') else 0, 
+                reverse=True
+            )
+            remaining_places = remaining_places[places_for_today:]
+            
+            if selected_places:  # 선택된 장소가 있는 경우만 일정 추가
                 daily_plans.append(DayPlan(
                     day_number=day_num,
-                    places=[self._create_place_detail(p) for p in places_for_day]
+                    places=[self._create_place_detail(p) for p in selected_places]
                 ))
         
         return [TravelPlan(
