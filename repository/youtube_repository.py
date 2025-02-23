@@ -34,7 +34,6 @@ class YouTubeRepository:
                 metadata = {
                     "url": content.url,
                     "title": content.title,
-                    "author": content.author,
                     "platform": content.platform.value,
                     "type": "summary"
                 }
