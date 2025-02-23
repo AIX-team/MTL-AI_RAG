@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 import openai
 from models.info2guide_model import PlaceInfo, PlaceDetail, DayPlan, TravelPlan
 from repository import info2guide_repository
@@ -37,62 +37,137 @@ class TravelPlannerService:
                     'phone': place.phone if hasattr(place, 'phone') else None,
                     'rating': place.rating if hasattr(place, 'rating') else None
                 }
-                places_dict[place.title] = place_dict  # 장소 이름으로 매핑
+                places_dict[place.id] = place_dict  # ID로 매핑
 
             prompt = info2guide_repository.create_travel_prompt(list(places_dict.values()), plan_type, days)
             response = await info2guide_repository.get_gpt_response(prompt)
             
             if not response or 'days' not in response:
                 print(f"No valid response for {plan_type} plan")
-                return [TravelPlan(plan_type=plan_type, daily_plans=[])]
+                return self._create_default_plan(places, days, plan_type)
             
             daily_plans = []
-            for day_data in response['days']:
+            total_places = len(places)
+            places_per_day = total_places // days
+            if places_per_day == 0:
+                places_per_day = 1
+            
+            remaining_places = list(places)
+            
+            # GPT가 빈 응답을 주면 기본 일정 생성
+            if not response['days']:
+                return self._create_default_plan(places, days, plan_type)
+            
+            for day_num in range(1, days + 1):
                 try:
-                    if day_data['day_number'] > days:
+                    day_data = next((d for d in response['days'] if d['day_number'] == day_num), None)
+                    if not day_data:
+                        # 해당 일자의 계획이 없으면 남은 장소들로 생성
+                        places_for_day = remaining_places[:places_per_day]
+                        remaining_places = remaining_places[places_per_day:]
+                        
+                        daily_plans.append(DayPlan(
+                            day_number=day_num,
+                            places=[self._create_place_detail(p) for p in places_for_day]
+                        ))
                         continue
                     
-                    # GPT 응답에서 추출한 장소 리스트
                     places_list = []
                     for place in day_data.get('places', []):
-                        # 장소 이름으로 원본 데이터 찾기
-                        original_place = places_dict.get(place.get('name'))
-                        if original_place:
-                            places_list.append(
-                                PlaceDetail(
-                                    id=original_place['id'],  # 원본 ID 사용
-                                    name=original_place['title'],
-                                    address=original_place['address'],
-                                    official_description=original_place['description'],
-                                    reviewer_description=place.get('reviewer_description', '리뷰 없음'),
-                                    place_type=original_place['type'],
-                                    rating=self._parse_rating(str(original_place['rating'])),
-                                    image_url=original_place['image'],
-                                    business_hours=original_place['open_hours'] or '영업시간 정보 없음',
-                                    website='',
-                                    latitude=str(original_place['latitude']),
-                                    longitude=str(original_place['longitude'])
-                                )
-                            )
+                        # ID로 원본 데이터 찾기
+                        place_id = place.get('id')
+                        if place_id in places_dict:
+                            original_place = places_dict[place_id]
+                            if original_place:
+                                places_list.append(self._create_place_detail(original_place))
+                                if original_place in remaining_places:
+                                    remaining_places.remove(original_place)
                     
-                    if places_list:  # 빈 날짜는 건너뛰기
+                    if places_list:
                         daily_plans.append(DayPlan(
-                            day_number=day_data['day_number'],
+                            day_number=day_num,
                             places=places_list
                         ))
-                        print(f"Added day {day_data['day_number']} with {len(places_list)} places")
+                        print(f"Added day {day_num} with {len(places_list)} places")
                 
                 except Exception as e:
-                    print(f"Error processing day {day_data.get('day_number', '?')}: {e}")
+                    print(f"Error processing day {day_num}: {e}")
+                    continue
+            
+            # 남은 장소들 처리
+            if remaining_places:
+                for day_plan in daily_plans:
+                    if len(remaining_places) == 0:
+                        break
+                    if len(day_plan.places) < places_per_day:
+                        day_plan.places.append(self._create_place_detail(remaining_places.pop(0)))
             
             return [TravelPlan(
                 plan_type=plan_type,
-                daily_plans=daily_plans[:days]
+                daily_plans=daily_plans
             )]
         except Exception as e:
             print(f"Error generating travel plans: {e}")
-            return [TravelPlan(plan_type=plan_type, daily_plans=[])]
-    
+            return self._create_default_plan(places, days, plan_type)
+
+    def _create_default_plan(self, places: List[PlaceInfo], days: int, plan_type: str) -> List[TravelPlan]:
+        """GPT가 실패하거나 빈 응답을 줄 경우 기본 일정 생성"""
+        total_places = len(places)
+        places_per_day = total_places // days
+        if places_per_day == 0:
+            places_per_day = 1
+        
+        daily_plans = []
+        remaining_places = list(places)
+        
+        for day_num in range(1, days + 1):
+            places_for_day = remaining_places[:places_per_day]
+            remaining_places = remaining_places[places_per_day:]
+            
+            if places_for_day:  # 해당 날짜에 배정할 장소가 있는 경우만 일정 추가
+                daily_plans.append(DayPlan(
+                    day_number=day_num,
+                    places=[self._create_place_detail(p) for p in places_for_day]
+                ))
+        
+        return [TravelPlan(
+            plan_type=plan_type,
+            daily_plans=daily_plans
+        )]
+
+    def _create_place_detail(self, place: Union[PlaceInfo, dict]) -> PlaceDetail:
+        """PlaceInfo 또는 place_dict에서 PlaceDetail 생성"""
+        if isinstance(place, dict):
+            return PlaceDetail(
+                id=place['id'],
+                name=place['title'],
+                address=place['address'],
+                official_description=place['description'],
+                reviewer_description="기본 일정으로 추가된 장소",
+                place_type=place['type'],
+                rating=self._parse_rating(str(place['rating'])),
+                image_url=place['image'],
+                business_hours=place['open_hours'] or '영업시간 정보 없음',
+                website='',
+                latitude=str(place['latitude']),
+                longitude=str(place['longitude'])
+            )
+        else:
+            return PlaceDetail(
+                id=place.id,
+                name=place.title,
+                address=place.address,
+                official_description=place.description,
+                reviewer_description="기본 일정으로 추가된 장소",
+                place_type=place.type,
+                rating=self._parse_rating(str(place.rating)),
+                image_url=place.image,
+                business_hours=place.open_hours if hasattr(place, 'open_hours') else '영업시간 정보 없음',
+                website='',
+                latitude=str(place.latitude),
+                longitude=str(place.longitude)
+            )
+
     def _parse_rating(self, rating_str: str) -> float:
         try:
             if rating_str in ['N/A', '', None]:
