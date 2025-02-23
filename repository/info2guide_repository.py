@@ -173,15 +173,13 @@ async def get_gpt_response(prompt: str) -> Dict:
         print(f"Full error details: {e.__class__.__name__}: {str(e)}")
         raise Exception(f"GPT API 호출 실패: {str(e)}")  # 에러를 상위로 전파
 def parse_gpt_response(response_text: str) -> Dict:
-    """GPT 응답을 파싱하여 구조화된 데이터로 변환"""
     try:
         print("Starting to parse response...")
         days = []
         current_day = None
         current_place = None
-        existing_days = set()  # 이미 처리된 날짜를 추적
+        existing_days = set()
         
-        # 불필요한 마크다운 기호 제거
         response_text = (response_text.replace('###', '')
                                     .replace('##', '')
                                     .replace('**', '')
@@ -192,9 +190,6 @@ def parse_gpt_response(response_text: str) -> Dict:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         
         for line in lines:
-            print(f"Processing line: {line}")
-            
-            # Day 시작 감지
             if line.lower().startswith('day'):
                 if current_place and current_day:
                     current_day['places'].append(current_place)
@@ -202,8 +197,6 @@ def parse_gpt_response(response_text: str) -> Dict:
                 
                 try:
                     day_num = int(''.join(filter(str.isdigit, line)))
-                    
-                    # 이미 처리된 날짜인 경우 해당 날짜의 데이터에 추가
                     if day_num in existing_days:
                         current_day = next(day for day in days if day['day_number'] == day_num)
                     else:
@@ -211,77 +204,71 @@ def parse_gpt_response(response_text: str) -> Dict:
                             days.append(current_day)
                         current_day = {'day_number': day_num, 'places': []}
                         existing_days.add(day_num)
-                    
                     print(f"Processing day: {day_num}")
                 except Exception as e:
                     print(f"Error parsing day number: {e}")
                 continue
             
-            # 키:값 형식의 라인 처리
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
-                # ID로 새로운 장소 시작 감지
                 if key == 'id':
                     if current_place and current_day:
                         current_day['places'].append(current_place)
                     current_place = {
                         'id': '',
-                        'name': '',
+                        'title': '',  # name -> title
                         'address': '',
-                        'official_description': '',
-                        'reviewer_description': '',
-                        'place_type': '',
-                        'rating': '0',
-                        'image_url': '',
-                        'business_hours': '',
-                        'website': '',
-                        'latitude': '',
-                        'longitude': ''
+                        'description': '',  # official_description -> description
+                        'intro': '',  # reviewer_description -> intro
+                        'type': '',  # place_type -> type
+                        'rating': 0.0,
+                        'image': '',  # image_url -> image
+                        'open_hours': '',  # business_hours -> open_hours
+                        'phone': '',
+                        'latitude': 0.0,
+                        'longitude': 0.0
                     }
                 
-                # 키에 따른 값 매핑
                 if current_place is not None:
                     if key == 'id':
                         current_place['id'] = value
                     elif key == 'place_name':
-                        current_place['name'] = value
+                        current_place['title'] = value  # name -> title
                     elif key == 'address':
                         current_place['address'] = value
                     elif key == 'official_description':
-                        current_place['official_description'] = value
+                        current_place['description'] = value  # official_description -> description
                     elif key in ['reviewer_description', "reviewer's_description"]:
-                        current_place['reviewer_description'] = value
+                        current_place['intro'] = value  # reviewer_description -> intro
                     elif key == 'place_type':
-                        current_place['place_type'] = value
+                        current_place['type'] = value  # place_type -> type
                     elif key == 'rating':
-                        current_place['rating'] = value
+                        try:
+                            current_place['rating'] = float(value)
+                        except:
+                            current_place['rating'] = 0.0
                     elif key in ['place_image_url', 'image_url']:
                         if '(' in value and ')' in value:
                             url = value[value.find('(')+1:value.find(')')]
-                            current_place['image_url'] = url
+                            current_place['image'] = url  # image_url -> image
                         else:
-                            current_place['image_url'] = value
+                            current_place['image'] = value
                     elif key in ['business_time', 'business_hours']:
-                        current_place['business_hours'] = value
-                    elif key == 'website':
-                        if '(' in value and ')' in value:
-                            url = value[value.find('(')+1:value.find(')')]
-                            current_place['website'] = url
-                        else:
-                            current_place['website'] = value
+                        current_place['open_hours'] = value  # business_hours -> open_hours
+                    elif key == 'phone':
+                        current_place['phone'] = value
                     elif key == 'location':
                         try:
                             lat, lon = value.split(',')
-                            current_place['latitude'] = lat.strip()
-                            current_place['longitude'] = lon.strip()
+                            current_place['latitude'] = float(lat.strip())  # 문자열 -> float
+                            current_place['longitude'] = float(lon.strip())  # 문자열 -> float
                         except Exception as e:
                             print(f"Error parsing location: {e}")
-                            current_place['latitude'] = ''
-                            current_place['longitude'] = ''
+                            current_place['latitude'] = 0.0
+                            current_place['longitude'] = 0.0
         
-        # 마지막 장소와 날짜 처리
         if current_place and current_day:
             current_day['places'].append(current_place)
         if current_day and current_day not in days:

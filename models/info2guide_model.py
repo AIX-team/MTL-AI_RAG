@@ -2,6 +2,34 @@
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from decimal import Decimal
+
+class CoursePlaceResponse(BaseModel):
+    num: int
+    id: str
+    name: str
+    type: str
+    description: str
+    image: str
+    address: str
+    hours: str
+    intro: str
+    latitude: str
+    longitude: str
+
+class CourseList(BaseModel):
+    courseId: str
+    courseNum: int
+    coursePlaces: List[CoursePlaceResponse]
+
+class GuideBookResponse(BaseModel):
+    success: str = "success"
+    message: str = "success"
+    guideBookTitle: str
+    travelInfoTitle: str
+    travelInfoId: str
+    courseCnt: int
+    courses: List[CourseList]
 
 class PlaceInfo(BaseModel):
     id: str
@@ -13,33 +41,33 @@ class PlaceInfo(BaseModel):
     image: str
     latitude: float
     longitude: float
-    open_hours:  Optional[str] = None  # Optional 필드로 변경
-    phone: Optional[str] = None  # Optional 필드로 변경
-    rating: Optional[float] = None  # rating도 Optional로 변경 가능
+    open_hours: Optional[str] = None
+    phone: Optional[str] = None
+    rating: Optional[Decimal] = None
 
 class PlaceSelectRequest(BaseModel):
     travel_days: int = Field(..., alias="travelDays")
     places: List[PlaceInfo]
-    travelTaste: str = Field(default="적당한 일정 선호", alias="travelTaste")  # 기본값 설정
+    travelTaste: str = Field(default="적당한 일정 선호", alias="travelTaste")
 
 class PlaceDetail(BaseModel):
     id: str
-    name: str
+    title: str
     address: str
-    official_description: str
-    reviewer_description: str
-    place_type: str
-    rating: float
-    image_url: str
-    business_hours: str
-    website: str
-    latitude: Optional[str] = ''
-    longitude: Optional[str] = ''
+    description: str
+    intro: str
+    type: str
+    rating: Decimal
+    image: str
+    open_hours: str
+    phone: Optional[str] = None
+    latitude: float
+    longitude: float
 
 class DayPlan(BaseModel):
     day_number: int
     places: List[PlaceDetail]
 
 class TravelPlan(BaseModel):
-    plan_type: str  # 'busy', 'normal', 'relaxed'
+    plan_type: str
     daily_plans: List[DayPlan]
