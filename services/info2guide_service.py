@@ -90,60 +90,40 @@ class TravelPlannerService:
                 if day_data['day_number'] > days:
                     continue
                 # GPT 응답에서 추출한 장소 리스트
-                places_list = [
-                    PlaceDetail(
-                        id=place.get('id', ''),
-                        name=place.get('name', '알 수 없는 장소'),
-                        address=place.get('address', '주소 정보 없음'),
-                        official_description=place.get('official_description', '설명 없음'),
-                        reviewer_description=place.get('reviewer_description', '리뷰 없음'),
-                        place_type=place.get('place_type', '기타'),
-                        rating=self._parse_rating(place.get('rating', '0')),
-                        image_url=place.get('image_url', ''),
-                        business_hours=place.get('business_hours', '영업시간 정보 없음'),
-                        website=place.get('website', ''),
-                        latitude=place.get('latitude', ''),
-                        longitude=place.get('longitude', '')
-                    )
-                    for place in day_data.get('places', [])
-                ]
-                # 만약 해당 날에 필요한 장소 수가 부족하면 원본 장소 목록에서 보충
-                if len(places_list) < required_places:
-                    additional_places = []
-                    existing_ids = {p.id for p in places_list}
-                    # 평점이 높은 순서대로 정렬
-                    sorted_places = sorted(places, key=lambda p: p.rating, reverse=True)
-                    for p in sorted_places:
-                        if p.id not in existing_ids and (len(places_list) + len(additional_places)) < required_places:
-                            additional_places.append(
-                                PlaceDetail(
-                                    id=p.id,
-                                    name=p.title,
-                                    address=p.address,
-                                    official_description=p.description,
-                                    reviewer_description="추가된 장소",
-                                    place_type=p.type,
-                                    rating=p.rating,
-                                    image_url=p.image,
-                                    business_hours=p.open_hours,
-                                    website="",
-                                    latitude=str(p.latitude),
-                                    longitude=str(p.longitude)
-                                )
-                            )
-                    places_list.extend(additional_places)
-                
-                daily_plans.append(DayPlan(
+                places_list = []
+                for place in day_data.get('places', []):
+                    try:
+                        place_detail = PlaceDetail(
+                            id=place.get('id', ''),
+                            title=place.get('title', '알 수 없는 장소'),
+                            address=place.get('address', '주소 정보 없음'),
+                            description=place.get('description', '설명 없음'),
+                            intro=place.get('intro', '리뷰 없음'),
+                            type=place.get('type', '기타'),
+                            rating=Decimal(str(place.get('rating', '0'))),
+                            image=place.get('image', ''),
+                            open_hours=place.get('open_hours', '영업시간 정보 없음'),
+                            phone=place.get('phone', ''),
+                            latitude=float(place.get('latitude', 0)),
+                            longitude=float(place.get('longitude', 0))
+                        )
+                        places_list.append(place_detail)
+                    except Exception as e:
+                        print(f"Error creating PlaceDetail: {e}")
+                        continue
+
+                day_plan = DayPlan(
                     day_number=day_data['day_number'],
                     places=places_list
-                ))
-                print(f"Added day {day_data['day_number']} with {len(places_list)} places")
+                )
+                daily_plans.append(day_plan)
             except Exception as e:
-                print(f"Error processing day {day_data.get('day_number', '?')}: {e}")
-        
+                print(f"Error processing day {day_data.get('day_number')}: {e}")
+                continue
+
         return TravelPlan(
             plan_type=plan_type,
-            daily_plans=daily_plans[:days]
+            daily_plans=daily_plans
         )
     
     def _parse_rating(self, rating_str: str) -> float:
