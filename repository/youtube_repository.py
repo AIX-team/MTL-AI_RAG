@@ -93,6 +93,7 @@ class YouTubeRepository:
                     lambda: self.vectordb.add_documents(documents)
                 )
                 print(f"✅ 벡터 DB 저장 완료: {len(documents)}개 문서")
+                print("벡터 DB에 문서 저장이 성공적으로 완료되었습니다!")
         except Exception as e:
             print(f"벡터 DB 저장 중 오류 발생: {str(e)}")
             raise
