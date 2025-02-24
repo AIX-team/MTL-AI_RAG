@@ -285,4 +285,27 @@ def parse_gpt_response(response_text: str) -> Dict:
         print(f"Response text: {response_text}")
         return {'days': []}
 
+def is_valid_place(p):
+    # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold', 'no+image' 등)가 아니어야 합니다
+    if not (p.photos and len(p.photos) > 0):
+        return False
+    first_photo = p.photos[0].url if (p.photos[0] and getattr(p.photos[0], 'url', '')) else ""
+    if not first_photo or "placehold" in first_photo.lower() or "no+image" in first_photo.lower():
+        return False
+    
+    # 주소 정보가 있어야 합니다
+    if not (p.formatted_address and p.formatted_address.strip()):
+        return False
+    address = p.formatted_address.lower()
+    
+    # 주소에 반드시 일본 관련 키워드가 포함되어 있어야 합니다
+    if not any(keyword in address for keyword in ["japan", "일본", "日本"]):
+        return False
+    
+    # 한국 관련 키워드가 포함되어 있으면 안 됩니다
+    if any(keyword in address for keyword in ["korea", "대한민국", "south korea", "republic of korea", "서울", "한국"]):
+        return False
+    
+    return True
+
 
