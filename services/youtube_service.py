@@ -260,6 +260,7 @@ class YouTubeService:
         try:
             content_infos = []
             place_details = []
+            final_summaries = {}  # 최종 요약을 저장할 딕셔너리
             start_time = time.time()
 
             for url in urls:
@@ -278,12 +279,15 @@ class YouTubeService:
 
             # 결과 데이터 크기 제한
             result = self._create_limited_result(content_infos, place_details, processing_time)
+                    
+            await self.repository.save_to_vectordb(final_summaries, content_infos, place_details)
             
             return result
 
         except Exception as e:
             print(f"Error in process_urls: {str(e)}")
             raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
+
 
     def _create_limited_result(self, content_infos, place_details, processing_time):
         """결과 데이터 크기를 제한하여 생성"""
@@ -602,7 +606,7 @@ URL: {info.url}"""
             final_result += "=" * 50 + "\n\n"
 
         return final_result
-
+    
     def search_content(self, query: str) -> List[Dict]:
         """벡터 DB에서 콘텐츠 검색"""
         try:
