@@ -224,3 +224,22 @@ class YouTubeRepository:
             search_results.append(result)
         
         return search_results 
+
+    def _create_limited_result(self, summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo], processing_time: float) -> Dict:
+        """
+        Create a limited result dictionary from the summaries, content infos, and place details.
+        Args:
+            summaries: A dictionary of summaries keyed by URL.
+            content_infos: A list of ContentInfo objects.
+            place_details: A list of PlaceInfo objects.
+            processing_time: The processing time in seconds.
+        Returns:
+            A dictionary containing the summaries, content infos, processing time, and place details.
+        """
+        limited_place_details = place_details[:5]  # Assuming the first 5 place details are returned
+        return {
+            "summary": summaries,
+            "content_infos": [info.dict() for info in content_infos],
+            "processing_time_seconds": processing_time,
+            "place_details": [place.dict() for place in limited_place_details]
+        } 
