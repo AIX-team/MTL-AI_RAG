@@ -255,6 +255,71 @@ class YouTubeService:
         except Exception as e:
             raise ValueError(f"Google Maps 클라이언트 초기화 실패: {str(e)}")
 
+    def _is_valid_place(self, p: PlaceInfo) -> bool:
+        """장소 필터링: 일본 관련 주소만 허용하고, 사진이 유효한지 확인"""
+        # 사진 정보 검사
+        if not (p.photos and len(p.photos) > 0):
+            return False
+        first_photo_url = p.photos[0].url if p.photos and hasattr(p.photos[0], "url") else ""
+        if not first_photo_url or "placehold" in first_photo_url.lower() or "no+image" in first_photo_url.lower():
+            return False
+            
+        # 주소 정보 검사
+        if not p.formatted_address or not p.formatted_address.strip():
+            return False
+        address_lower = p.formatted_address.lower()
+        
+        # 일본 관련 키워드 포함 여부 확인
+        if not any(keyword in address_lower for keyword in ["日本", "japan", "일본"]):
+            return False
+            
+        # 한국 관련 키워드 제외
+        if any(keyword in address_lower for keyword in ["대한민국", "korea", "한국", "south korea", "republic of korea"]):
+            return False
+            
+        return True
+
+    def _create_limited_result(self, content_infos: List[ContentInfo], place_details: List[PlaceInfo], processing_time: float) -> Dict:
+        """결과 데이터 크기를 제한하여 생성"""
+        summaries = {}
+        limited_place_details = []
+        
+        total_size = 0
+        
+        # 컨텐츠 정보 제한
+        for info in content_infos:
+            if total_size >= self.MAX_TOTAL_SIZE:
+                break
+            
+            summary = self._format_final_result(
+                content_infos=[info],
+                place_details=[p for p in place_details if self._is_valid_place(p)],
+                processing_time=processing_time,
+                urls=[info.url]
+            )
+            
+            summary_size = len(str(summary).encode())
+            if total_size + summary_size <= self.MAX_TOTAL_SIZE:
+                summaries[info.url] = summary
+                total_size += summary_size
+        
+        # 장소 상세 정보 제한: 일본에 해당하는 장소만 추가
+        valid_places = [p for p in place_details if self._is_valid_place(p)]
+        for place in valid_places:
+            place_size = len(str(place.dict()).encode())
+            if total_size + place_size <= self.MAX_TOTAL_SIZE:
+                limited_place_details.append(place)
+                total_size += place_size
+            else:
+                break
+        
+        return {
+            "summary": summaries,
+            "content_infos": [info.dict() for info in content_infos],
+            "processing_time_seconds": processing_time,
+            "place_details": [place.dict() for place in limited_place_details]
+        }
+
     async def process_urls(self, urls: List[str]) -> Dict:
         """URL 목록을 처리하여 각각의 요약을 생성"""
         try:
@@ -284,46 +349,6 @@ class YouTubeService:
         except Exception as e:
             print(f"Error in process_urls: {str(e)}")
             raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
-
-    def _create_limited_result(self, content_infos, place_details, processing_time):
-        """결과 데이터 크기를 제한하여 생성"""
-        summaries = {}
-        limited_place_details = []
-        
-        total_size = 0
-        
-        # 컨텐츠 정보 제한
-        for info in content_infos:
-            if total_size >= self.MAX_TOTAL_SIZE:
-                break
-            
-            summary = self._format_final_result(
-                content_infos=[info],
-                place_details=[p for p in place_details if p.source_url == info.url],
-                processing_time=processing_time,
-                urls=[info.url]
-            )
-            
-            summary_size = len(str(summary).encode())
-            if total_size + summary_size <= self.MAX_TOTAL_SIZE:
-                summaries[info.url] = summary
-                total_size += summary_size
-        
-        # 장소 상세 정보 제한
-        for place in place_details:
-            place_size = len(str(place.dict()).encode())
-            if total_size + place_size <= self.MAX_TOTAL_SIZE:
-                limited_place_details.append(place)
-                total_size += place_size
-            else:
-                break
-        
-        return {
-            "summary": summaries,
-            "content_infos": [info.dict() for info in content_infos],
-            "processing_time_seconds": processing_time,
-            "place_details": [place.dict() for place in limited_place_details]
-        }
 
     async def _process_youtube_url(self, url, content_infos, place_details):
         """YouTube URL 처리"""
@@ -572,27 +597,7 @@ URL: {info.url}"""
         
         final_result += f"\n{'='*50}\n\n=== 장소별 상세 정보 ===\n\n"
 
-        # Filtering valid places according to the criteria
-        def is_valid_place(p):
-            # 사진 정보 검사: 사진 리스트가 존재하고, 첫 번째 사진 URL이 유효한지 확인
-            if not (p.photos and len(p.photos) > 0):
-                return False
-            first_photo = p.photos[0].url if (p.photos[0] and p.photos[0].url) else ""
-            if not first_photo or "placehold" in first_photo.lower() or "no+image" in first_photo.lower():
-                return False
-            # 주소 검사: 주소가 존재하며 일본 관련 키워드 포함, 한국 관련 키워드 미포함
-            if not p.formatted_address or not p.formatted_address.strip():
-                return False
-            address_lower = p.formatted_address.lower()
-            if not any(keyword in address_lower for keyword in ["日本", "japan", "일본"]):
-                return False
-            if any(keyword in address_lower for keyword in ["대한민국", "korea", "한국", "south korea", "republic of korea"]):
-                return False
-            return True
-        
-        valid_places = [p for p in place_details if is_valid_place(p)]
-        
-        for idx, place in enumerate(valid_places, 1):
+        for idx, place in enumerate(place_details, 1):
             final_result += f"{idx}. {place.name}\n"
             final_result += "=" * 50 + "\n\n"
             final_result += f"주소: {place.formatted_address}\n"
@@ -835,30 +840,8 @@ URL: {info.url}"""
             # 장소별 상세 정보
             summary += "=== 장소별 상세 정보 ===\n\n"
             
-            # Filtering valid places according to the criteria
-            def is_valid_place(p):
-                # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold' 포함)가 아니어야 합니다
-                if not (p.photos and len(p.photos) > 0):
-                    return False
-                first_photo = p.photos[0].url if p.photos[0] else ""
-                if "placehold" in first_photo:
-                    return False
-                
-                # 주소 정보가 있어야 합니다
-                if not p.formatted_address:
-                    return False
-                
-                # 주소에 반드시 일본 관련 키워드가 포함되어 있어야 합니다
-                if not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
-                    return False
-                
-                # 대한민국 혹은 다른 나라 관련 키워드가 있으면 안 됩니다
-                if "대한민국" in p.formatted_address or "Korea" in p.formatted_address:
-                    return False
-                
-                return True
-            
-            valid_places = [p for p in place_details if is_valid_place(p)]
+            # 유효한 장소만 필터링
+            valid_places = [p for p in place_details if self._is_valid_place(p)]
             
             for idx, place in enumerate(valid_places, 1):
                 summary += f"{idx}. {place.name}\n"
@@ -873,7 +856,7 @@ URL: {info.url}"""
             
             # 유효한 장소가 없는 경우 메시지 추가
             if not valid_places:
-                summary += "※ 유효한 장소 정보가 없습니다. (사진, 좌표, 일본 주소 중 하나 이상 누락)\n"
+                summary += "※ 유효한 일본 내 장소 정보가 없습니다.\n"
             
             summaries[content.url] = summary
         
