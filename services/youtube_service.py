@@ -574,18 +574,19 @@ URL: {info.url}"""
 
         # Filtering valid places according to the criteria
         def is_valid_place(p):
-            # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold' 포함)가 아니어야 합니다.
+            # 사진 정보 검사: 사진 리스트가 존재하고, 첫 번째 사진 URL이 유효한지 확인
             if not (p.photos and len(p.photos) > 0):
                 return False
-            first_photo = p.photos[0].url if p.photos[0] else ""
-            if "placehold" in first_photo:
+            first_photo = p.photos[0].url if (p.photos[0] and p.photos[0].url) else ""
+            if not first_photo or "placehold" in first_photo.lower() or "no+image" in first_photo.lower():
                 return False
-            # 주소가 있어야 하며, 일본 관련 키워드가 포함되어 있어야 합니다.
-            if not p.formatted_address:
+            # 주소 검사: 주소가 존재하며 일본 관련 키워드 포함, 한국 관련 키워드 미포함
+            if not p.formatted_address or not p.formatted_address.strip():
                 return False
-            if not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
+            address_lower = p.formatted_address.lower()
+            if not any(keyword in address_lower for keyword in ["日本", "japan", "일본"]):
                 return False
-            if "대한민국" in p.formatted_address or "Korea" in p.formatted_address:
+            if any(keyword in address_lower for keyword in ["대한민국", "korea", "한국", "south korea", "republic of korea"]):
                 return False
             return True
         
