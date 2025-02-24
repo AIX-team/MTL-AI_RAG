@@ -572,65 +572,45 @@ URL: {info.url}"""
         
         final_result += f"\n{'='*50}\n\n=== 장소별 상세 정보 ===\n"
 
-        # 3. 장소별 정보
-        for idx, place in enumerate(place_details, 1):
-            final_result += f"""
-{idx}. {place.name}
-{'='*50}
-
-[유튜버의 리뷰]"""
-            
-            # 설명에서 "방문한 장소:" 부분 제거
-            description = place.description or '장소 설명을 찾을 수 없습니다.'
-            if "방문한 장소:" in description:
-                # "방문한 장소:" 이후의 첫 번째 "-" 또는 "타임스탬프:" 이전까지의 텍스트 제거
-                parts = description.split(" - ", 1)
-                if len(parts) > 1:
-                    description = parts[1].strip()
-            
-            # 설명과 추천사항 분리
-            if " - 추천 사항:" in description:
-                desc_parts = description.split(" - 추천 사항:", 1)
-                description = desc_parts[0].strip()
-                recommendations = desc_parts[1].strip()
-                final_result += f"""
-장소설명: {description}
-
-[추천 사항]
-{recommendations}"""
-            else:
-                final_result += f"""
-장소설명: {description}"""
-
-            # 구글 장소 정보가 있는 경우에만 추가
-            if place.google_info:
-                
-                final_result += f"""
-
-                [장소 설명]
-{place.official_description or '설명 없음'}
-[구글 장소 정보]
-장소타입: {place.types[0] if place.types and len(place.types) > 0 else '정보 없음'}
-🏠 주소: {place.formatted_address or '정보 없음'}
-⭐ 평점: {place.rating or 'None'}
-📞 전화: {place.phone or 'None'}
-🌐 웹사이트: {place.website or 'None'}
-💰 가격대: {'₩' * place.price_level if place.price_level else '정보 없음'}
-⏰ 영업시간:
-{chr(10).join(place.opening_hours if place.opening_hours else ['정보 없음'])}
-
-[사진 및 리뷰]"""
-                
-                if place.photos:
-                    for photo_idx, photo in enumerate(place.photos, 1):
-                        final_result += f"""
-📸 사진 {photo_idx}: {photo.url}"""
-                
-                final_result += f"""
-⭐ 베스트 리뷰: {place.best_review or '리뷰 없음'}"""
-            
-            final_result += f"\n{'='*50}"
+        # 장소별 상세 정보
+        summary += "=== 장소별 상세 정보 ===\n\n"
         
+        # Filtering valid places according to the criteria
+        def is_valid_place(p):
+            # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold' 포함)가 아니어야 합니다
+            if not (p.photos and len(p.photos) > 0):
+                return False
+            first_photo = p.photos[0].url if p.photos[0] else ""
+            if "placehold" in first_photo:
+                return False
+            
+            # 주소 정보가 있어야 합니다
+            if not p.formatted_address:
+                return False
+            
+            # 주소에 반드시 일본 관련 키워드가 포함되어 있어야 합니다
+            if not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
+                return False
+            
+            # 대한민국 혹은 다른 나라 관련 키워드가 있으면 안 됩니다
+            if "대한민국" in p.formatted_address or "Korea" in p.formatted_address:
+                return False
+            
+            return True
+        
+        valid_places = [p for p in place_details if is_valid_place(p)]
+        
+        for idx, place in enumerate(valid_places, 1):
+            summary += f"{idx}. {place.name}\n"
+            summary += "=" * 50 + "\n\n"
+            summary += f"주소: {place.formatted_address}\n"
+            if place.geometry and place.geometry.latitude is not None and place.geometry.longitude is not None:
+                summary += f"위도: {place.geometry.latitude}\n"
+                summary += f"경도: {place.geometry.longitude}\n"
+            if place.photos and len(place.photos) > 0:
+                summary += f"사진 URL: {place.photos[0].url}\n"
+            summary += "=" * 50 + "\n\n"
+
         return final_result
 
     def search_content(self, query: str) -> List[Dict]:
@@ -863,73 +843,40 @@ URL: {info.url}"""
             # 장소별 상세 정보
             summary += "=== 장소별 상세 정보 ===\n\n"
             
-            # 현재 콘텐츠와 관련된 장소만 필터링
-            content_places = [place for place in place_details if place.source_url == content.url]
+            # Filtering valid places according to the criteria
+            def is_valid_place(p):
+                # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold' 포함)가 아니어야 합니다
+                if not (p.photos and len(p.photos) > 0):
+                    return False
+                first_photo = p.photos[0].url if p.photos[0] else ""
+                if "placehold" in first_photo:
+                    return False
+                
+                # 주소 정보가 있어야 합니다
+                if not p.formatted_address:
+                    return False
+                
+                # 주소에 반드시 일본 관련 키워드가 포함되어 있어야 합니다
+                if not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
+                    return False
+                
+                # 대한민국 혹은 다른 나라 관련 키워드가 있으면 안 됩니다
+                if "대한민국" in p.formatted_address or "Korea" in p.formatted_address:
+                    return False
+                
+                return True
             
-            # 유효한 장소만 필터링
-            valid_places = []
-            for place in content_places:
-                # 1. 사진이 있는지 확인
-                has_photos = place.photos and len(place.photos) > 0
-                
-                # 2. 위도/경도가 있는지 확인
-                has_coordinates = (
-                    place.geometry and 
-                    place.geometry.latitude is not None and 
-                    place.geometry.longitude is not None
-                )
-                
-                # 3. 주소가 일본인지 확인
-                is_japan_address = (
-                    place.formatted_address and 
-                    ("日本" in place.formatted_address or 
-                     "Japan" in place.formatted_address or 
-                     "일본" in place.formatted_address)
-                )
-                
-                # 모든 조건을 만족하는 경우만 포함
-                if has_photos and has_coordinates and is_japan_address:
-                    valid_places.append(place)
-                else:
-                    print(f"장소 제외: {place.name}")
-                    print(f"- 사진 있음: {has_photos}")
-                    print(f"- 좌표 있음: {has_coordinates}")
-                    print(f"- 일본 주소: {is_japan_address}")
+            valid_places = [p for p in place_details if is_valid_place(p)]
             
-            # 유효한 장소들만 요약에 포함
             for idx, place in enumerate(valid_places, 1):
                 summary += f"{idx}. {place.name}\n"
                 summary += "=" * 50 + "\n\n"
-                
-                # 유튜버/블로거의 리뷰
-                summary += "[유튜버/블로거의 리뷰]\n"
-                summary += f"장소설명: {place.description or '장소 설명을 찾을 수 없습니다.'}\n\n"
-                
-                # 구글 장소 정보
-                if place.google_info:
-                    summary += "[구글 장소 정보]\n"
-                    summary += f"🏠 주소: {place.formatted_address or '정보 없음'}\n"
-                    summary += f"📍 좌표: ({place.geometry.latitude}, {place.geometry.longitude})\n"
-                    summary += f"⭐ 평점: {place.rating or 'None'}\n"
-                    summary += f"📞 전화: {place.phone or 'None'}\n"
-                    summary += f"🌐 웹사이트: {place.website or 'None'}\n"
-                    summary += f"💰 가격대: {'₩' * place.price_level if place.price_level else '정보 없음'}\n"
-                    
-                    # 영업시간
-                    summary += "⏰ 영업시간:\n"
-                    if place.opening_hours:
-                        for hours in place.opening_hours:
-                            summary += f"{hours}\n"
-                    else:
-                        summary += "정보 없음\n"
-                    
-                    # 사진 및 리뷰
-                    summary += "\n[사진 및 리뷰]\n"
-                    if place.photos:
-                        for photo_idx, photo in enumerate(place.photos[:1], 1):
-                            summary += f"📸 사진 {photo_idx}: {photo.url}\n"
-                    summary += f"⭐ 베스트 리뷰: {place.best_review or '리뷰 없음'}\n"
-                
+                summary += f"주소: {place.formatted_address}\n"
+                if place.geometry and place.geometry.latitude is not None and place.geometry.longitude is not None:
+                    summary += f"위도: {place.geometry.latitude}\n"
+                    summary += f"경도: {place.geometry.longitude}\n"
+                if place.photos and len(place.photos) > 0:
+                    summary += f"사진 URL: {place.photos[0].url}\n"
                 summary += "=" * 50 + "\n\n"
             
             # 유효한 장소가 없는 경우 메시지 추가
