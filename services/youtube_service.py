@@ -572,22 +572,20 @@ URL: {info.url}"""
         
         final_result += f"\n{'='*50}\n\n=== 장소별 상세 정보 ===\n\n"
 
-        # Filtering valid places according to the criteria
+        # 장소 필터링 조건 수정
         def is_valid_place(p):
-            # 사진 정보 검사: 사진 리스트가 존재하고, 첫 번째 사진 URL이 유효한지 확인
-            if not (p.photos and len(p.photos) > 0):
+            # 1. 일본 주소 확인
+            if not p.formatted_address or not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
                 return False
-            first_photo = p.photos[0].url if (p.photos[0] and p.photos[0].url) else ""
-            if not first_photo or "placehold" in first_photo.lower() or "no+image" in first_photo.lower():
+            
+            # 2. 사진 URL 존재 확인 (null이 아님)
+            if not p.photos or len(p.photos) == 0:
                 return False
-            # 주소 검사: 주소가 존재하며 일본 관련 키워드 포함, 한국 관련 키워드 미포함
-            if not p.formatted_address or not p.formatted_address.strip():
+            
+            # 3. 위도/경도 필수 확인
+            if not p.geometry or p.geometry.latitude is None or p.geometry.longitude is None:
                 return False
-            address_lower = p.formatted_address.lower()
-            if not any(keyword in address_lower for keyword in ["日本", "japan", "일본"]):
-                return False
-            if any(keyword in address_lower for keyword in ["대한민국", "korea", "한국", "south korea", "republic of korea"]):
-                return False
+            
             return True
         
         valid_places = [p for p in place_details if is_valid_place(p)]
@@ -837,23 +835,16 @@ URL: {info.url}"""
             
             # Filtering valid places according to the criteria
             def is_valid_place(p):
-                # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold' 포함)가 아니어야 합니다
-                if not (p.photos and len(p.photos) > 0):
-                    return False
-                first_photo = p.photos[0].url if p.photos[0] else ""
-                if "placehold" in first_photo:
+                # 1. 일본 주소 확인
+                if not p.formatted_address or not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
                     return False
                 
-                # 주소 정보가 있어야 합니다
-                if not p.formatted_address:
+                # 2. 사진 URL 존재 확인 (null이 아님)
+                if not p.photos or len(p.photos) == 0:
                     return False
                 
-                # 주소에 반드시 일본 관련 키워드가 포함되어 있어야 합니다
-                if not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
-                    return False
-                
-                # 대한민국 혹은 다른 나라 관련 키워드가 있으면 안 됩니다
-                if "대한민국" in p.formatted_address or "Korea" in p.formatted_address:
+                # 3. 위도/경도 필수 확인
+                if not p.geometry or p.geometry.latitude is None or p.geometry.longitude is None:
                     return False
                 
                 return True
