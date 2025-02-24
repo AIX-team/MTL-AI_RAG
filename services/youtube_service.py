@@ -385,49 +385,53 @@ class YouTubeService:
                     
                     # Google Places API로 장소 정보 검색
                     places_result = self.gmaps.places(f"{place_name} {area}")
-                    if places_result['results']:
-                        place = places_result['results'][0]
-                        place_id = place['place_id']
-                        details = self.gmaps.place(place_id, language='ko')['result']
-                        
-                        # 장소 타입과 좌표 정보 추출
-                        place_type = details.get('types', ['unknown'])[0]
-                        location = details.get('geometry', {}).get('location', {})
-                        geometry = PlaceGeometry(
-                            latitude=location.get('lat'),
-                            longitude=location.get('lng')
-                        )
-                        
-                        place_info = PlaceInfo(
-                            name=place_name,
-                            source_url=source_url,
-                            type=place_type,  # 장소 타입 설정
-                            geometry=geometry,  # geometry 정보 설정
-                            description=self._extract_place_description(summary, place_name),
-                            official_description=self._get_place_description_from_openai(place_name, place_type),  # official_description 설정
-                            formatted_address=details.get('formatted_address'),
-                            rating=details.get('rating'),
-                            phone=details.get('formatted_phone_number'),
-                            website=details.get('website'),
-                            price_level=details.get('price_level'),
-                            opening_hours=details.get('opening_hours', {}).get('weekday_text'),
-                            google_info=details
-                        )
-                        
-                        # 사진 URL 추가
-                        if 'photos' in details:
-                            photo_ref = details['photos'][0]['photo_reference']
-                            photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={os.getenv('GOOGLE_PLACES_API_KEY')}"
-                            place_info.photos = [PlacePhoto(url=photo_url)]
-                        
-                        # 베스트 리뷰 추가
-                        if 'reviews' in details:
-                            best_review = max(details['reviews'], key=lambda x: x.get('rating', 0))
-                            place_info.best_review = best_review.get('text')
+                    if not places_result['results']:
+                        print(f"검색 결과 없음: {place_name} {area}")
+                        continue
                     
-                    place_details.append(place_info)
+                    # 검색 결과가 있으면 첫 번째 결과로 진행
+                    place = places_result['results'][0]
+                    place_id = place['place_id']
+                    details = self.gmaps.place(place_id, language='ko')['result']
+                    
+                    # 장소 타입과 좌표 정보 추출
+                    place_type = details.get('types', ['unknown'])[0]
+                    location = details.get('geometry', {}).get('location', {})
+                    geometry = PlaceGeometry(
+                        latitude=location.get('lat'),
+                        longitude=location.get('lng')
+                    )
+                    
+                    # 새로운 PlaceInfo 객체 생성
+                    place_info_obj = PlaceInfo(
+                        name=place_name,
+                        source_url=source_url,
+                        type=place_type,
+                        geometry=geometry,
+                        description=self._extract_place_description(summary, place_name),
+                        official_description=self._get_place_description_from_openai(place_name, place_type),
+                        formatted_address=details.get('formatted_address'),
+                        rating=details.get('rating'),
+                        phone=details.get('formatted_phone_number'),
+                        website=details.get('website'),
+                        price_level=details.get('price_level'),
+                        opening_hours=details.get('opening_hours', {}).get('weekday_text'),
+                        google_info=details
+                    )
+                    
+                    # 사진 URL 추가
+                    if 'photos' in details:
+                        photo_ref = details['photos'][0]['photo_reference']
+                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={os.getenv('GOOGLE_PLACES_API_KEY')}"
+                        place_info_obj.photos = [PlacePhoto(url=photo_url)]
+                    
+                    # 베스트 리뷰 추가
+                    if 'reviews' in details:
+                        best_review = max(details['reviews'], key=lambda x: x.get('rating', 0))
+                        place_info_obj.best_review = best_review.get('text')
+                    
+                    place_details.append(place_info_obj)
                     print(f"장소 정보 추가 완료: {place_name}")
-                    
                 except Exception as e:
                     print(f"장소 정보 처리 중 오류 발생 ({place_info}): {str(e)}")
                     continue
@@ -438,27 +442,19 @@ class YouTubeService:
             raise Exception(f"URL 처리 중 오류 발생: {str(e)}")
 
     def _process_naver_blog(self, url: str) -> List[PlaceInfo]:
-        """네이버 블로그 글을 처리하여 요약을 생성"""
+        """네이버 블로그 글을 처리하여 요약을 생성, YouTube와 동일한 흐름으로 처리"""
         try:
-            import requests
-            from bs4 import BeautifulSoup
-            
-            # 블로그 내용 가져오기
-            response = requests.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 본문 내용 추출
-            content = soup.get_text()
-            
+            # 네이버 블로그 컨텐츠 추출 (전용 메서드 사용)
+            content = self.content_service._get_naver_blog_content(url)
+
             # 텍스트 분할 및 요약
             chunks = self.text_service.split_text(content)
             summary = self.text_service.summarize_text(chunks)
-            
-            # 장소 추출 및 정보 수집
+
+            # 요약 텍스트에서 장소 추출
             place_names = self.place_service.extract_place_names(summary)
             print(f"추출된 장소: {place_names}")
-            
+
             # 장소 정보 수집
             place_details = []
             for place_name in place_names:
@@ -470,53 +466,59 @@ class YouTubeService:
                     else:
                         place_name = place_name
                         area = "일본"
-                    
+
                     # Google Places API로 장소 정보 검색
-                    place_info = PlaceInfo(
+                    places_result = self.gmaps.places(f"{place_name} {area}")
+                    if not places_result['results']:
+                        print(f"검색 결과 없음: {place_name} {area}")
+                        continue
+
+                    # 검색 결과가 있으면 첫 번째 결과로 진행
+                    place = places_result['results'][0]
+                    place_id = place['place_id']
+                    details = self.gmaps.place(place_id, language='ko')['result']
+
+                    # 장소 타입 및 좌표 정보 추출
+                    place_type = details.get('types', ['unknown'])[0]
+                    location = details.get('geometry', {}).get('location', {})
+                    geometry = PlaceGeometry(
+                        latitude=location.get('lat'),
+                        longitude=location.get('lng')
+                    )
+
+                    # 새로운 PlaceInfo 객체 생성
+                    place_info_obj = PlaceInfo(
                         name=place_name,
                         source_url=url,
+                        type=place_type,
+                        geometry=geometry,
                         description=self._extract_place_description(summary, place_name),
-                        google_info={}
+                        official_description=self._get_place_description_from_openai(place_name, place_type),
+                        formatted_address=details.get('formatted_address'),
+                        rating=details.get('rating'),
+                        phone=details.get('formatted_phone_number'),
+                        website=details.get('website'),
+                        price_level=details.get('price_level'),
+                        opening_hours=details.get('opening_hours', {}).get('weekday_text'),
+                        google_info=details
                     )
-                    
-                    # Google Places API 검색 시도
-                    places_result = self.gmaps.places(f"{place_name} {area}")
-                    if places_result['results']:
-                        place = places_result['results'][0]
-                        place_id = place['place_id']
-                        details = self.gmaps.place(place_id, language='ko')['result']
-                        
-                        # OpenAI로 장소 설명 생성
-                        official_description = self._get_place_description_from_openai(place_name, details.get('types', ['정보 없음'])[0])
-                        if official_description:
-                            place_info.official_description = official_description
-                        
-                        # 추가 정보 업데이트
-                        place_info.formatted_address = details.get('formatted_address')
-                        place_info.rating = details.get('rating')
-                        place_info.phone = details.get('formatted_phone_number')
-                        place_info.website = details.get('website')
-                        place_info.price_level = details.get('price_level')
-                        place_info.opening_hours = details.get('opening_hours', {}).get('weekday_text')
-                        place_info.google_info = details
-                        
-                        # 사진 URL 추가
-                        if 'photos' in details:
-                            photo_ref = details['photos'][0]['photo_reference']
-                            photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={os.getenv('GOOGLE_PLACES_API_KEY')}"
-                            place_info.photos = [PlacePhoto(url=photo_url)]
-                        
-                        # 베스트 리뷰 추가
-                        if 'reviews' in details:
-                            best_review = max(details['reviews'], key=lambda x: x.get('rating', 0))
-                            place_info.best_review = best_review.get('text')
-                    
-                    place_details.append(place_info)
+
+                    # 사진 URL 추가
+                    if 'photos' in details:
+                        photo_ref = details['photos'][0]['photo_reference']
+                        photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_ref}&key={os.getenv('GOOGLE_PLACES_API_KEY')}"
+                        place_info_obj.photos = [PlacePhoto(url=photo_url)]
+
+                    # 베스트 리뷰 추가
+                    if 'reviews' in details:
+                        best_review = max(details['reviews'], key=lambda x: x.get('rating', 0))
+                        place_info_obj.best_review = best_review.get('text')
+
+                    place_details.append(place_info_obj)
                     print(f"장소 정보 추가 완료: {place_name}")
-                    
                 except Exception as e:
                     print(f"장소 정보 처리 중 오류 발생 ({place_name}): {str(e)}")
-                    # 에러가 발생해도 기본 정보는 추가
+                    # 에러 발생 시 기본 정보로 PlaceInfo 추가
                     place_details.append(PlaceInfo(
                         name=place_name,
                         source_url=url,
@@ -524,9 +526,8 @@ class YouTubeService:
                         google_info={}
                     ))
                     continue
-            
+
             return place_details
-            
         except Exception as e:
             raise Exception(f"URL 처리 중 오류 발생: {str(e)}")
 
