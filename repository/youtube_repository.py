@@ -55,7 +55,9 @@ class YouTubeRepository:
     async def save_to_vectordb(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo]) -> None:
         """벡터 DB에 최종 요약 저장"""
         try:
+            print("\n[3.3.1] 벡터 DB 저장 시작")
             documents = []
+            print("- 콘텐츠 요약 문서 생성 중...")
             for content in content_infos:
                 summary = final_summaries.get(content.url, "요약 정보 없음")
                 metadata = {
@@ -68,7 +70,9 @@ class YouTubeRepository:
                 # None 값과 복잡한 객체 필터링
                 filtered_metadata = filter_complex_metadata(metadata)
                 documents.append(Document(page_content=summary, metadata=filtered_metadata))
+            print(f"✓ {len(content_infos)}개의 콘텐츠 요약 문서 생성 완료")
             
+            print("\n[3.3.2] 장소 정보 문서 생성 중...")
             # 장소 정보도 저장
             for place in place_details:
                 if place and place.description:  # None이 아닌 경우만 처리
@@ -85,21 +89,24 @@ class YouTubeRepository:
                         page_content=place.description,
                         metadata=filtered_metadata
                     ))
+            print(f"✓ {len(place_details)}개의 장소 정보 문서 생성 완료")
             
             if documents:  # 문서가 있는 경우만 저장
+                print("\n[3.3.3] 벡터 DB에 문서 저장 중...")
                 # 비동기로 문서 추가
                 await asyncio.get_event_loop().run_in_executor(
                     None, 
                     lambda: self.vectordb.add_documents(documents)
                 )
-                print(f"✅ 벡터 DB 저장 완료: {len(documents)}개 문서")
-                print("벡터 DB에 문서 저장이 성공적으로 완료되었습니다!")
+                print(f"✓ 벡터 DB 저장 완료: 총 {len(documents)}개 문서")
+            
         except Exception as e:
-            print(f"벡터 DB 저장 중 오류 발생: {str(e)}")
+            print(f"\n❌ [오류] 벡터 DB 저장 중 오류 발생: {str(e)}")
             raise
 
     async def save_final_summary(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo]) -> List[str]:
         """URL별로 최종 요약을 파일로 저장하고 파일 경로 리스트 반환"""
+        print("\n[3.3.4] 최종 요약 파일 저장 시작")
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         saved_paths = []
         
@@ -108,17 +115,19 @@ class YouTubeRepository:
                 file_name = f"final_summary_{content.platform.value}_{timestamp}.txt"
                 file_path = os.path.join(self.summary_dir, file_name)
                 
+                print(f"- 요약 파일 저장 중: {file_name}")
                 async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
                     summary = final_summaries.get(content.url, "요약 정보 없음")
                     await f.write(summary)
                 
                 saved_paths.append(file_path)
-                print(f"✅ 요약본 저장 완료: {file_path}")
+                print(f"✓ 요약 파일 저장 완료: {file_path}")
                 
             except Exception as e:
-                print(f"파일 저장 중 오류 발생: {str(e)}")
+                print(f"❌ 파일 저장 중 오류 발생: {str(e)}")
                 continue
         
+        print(f"✓ 총 {len(saved_paths)}개의 요약 파일 저장 완료")
         return saved_paths
 
     def query_vectordb(self, query: str, k: int = 3) -> List[Document]:
@@ -226,21 +235,4 @@ class YouTubeRepository:
         
         return search_results 
 
-    def _create_limited_result(self, summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo], processing_time: float) -> Dict:
-        """
-        Create a limited result dictionary from the summaries, content infos, and place details.
-        Args:
-            summaries: A dictionary of summaries keyed by URL.
-            content_infos: A list of ContentInfo objects.
-            place_details: A list of PlaceInfo objects.
-            processing_time: The processing time in seconds.
-        Returns:
-            A dictionary containing the summaries, content infos, processing time, and place details.
-        """
-        limited_place_details = place_details[:5]  # Assuming the first 5 place details are returned
-        return {
-            "summary": summaries,
-            "content_infos": [info.dict() for info in content_infos],
-            "processing_time_seconds": processing_time,
-            "place_details": [place.dict() for place in limited_place_details]
-        } 
+    

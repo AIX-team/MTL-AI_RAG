@@ -256,28 +256,42 @@ class YouTubeService:
             raise ValueError(f"Google Maps 클라이언트 초기화 실패: {str(e)}")
 
     def _is_valid_place(self, p: PlaceInfo) -> bool:
-        """장소 필터링: 일본 관련 주소만 허용하고, 사진이 유효한지 확인"""
-        # 사진 정보 검사
-        if not (p.photos and len(p.photos) > 0):
-            return False
-        first_photo_url = p.photos[0].url if p.photos and hasattr(p.photos[0], "url") else ""
-        if not first_photo_url or "placehold" in first_photo_url.lower() or "no+image" in first_photo_url.lower():
-            return False
+        """장소 필터링: 이미지, 좌표, 일본 주소 필수"""
+        try:
+            # 1. 이미지 URL 검사
+            if not (p.photos and len(p.photos) > 0 and hasattr(p.photos[0], "url") and p.photos[0].url):
+                print(f"❌ 이미지 URL 누락: {p.name}")
+                return False
+
+            # 2. 위도/경도 검사
+            if not (p.geometry and 
+                    hasattr(p.geometry, "latitude") and hasattr(p.geometry, "longitude") and
+                    p.geometry.latitude is not None and p.geometry.longitude is not None):
+                print(f"❌ 위도/경도 누락: {p.name}")
+                return False
+
+            # 3. 일본 주소 검사
+            if not p.formatted_address:
+                print(f"❌ 주소 누락: {p.name}")
+                return False
+
+            address_lower = p.formatted_address.lower()
+            japan_keywords = ["日本", "japan", "일본"]
             
-        # 주소 정보 검사
-        if not p.formatted_address or not p.formatted_address.strip():
+            if not any(keyword in address_lower for keyword in japan_keywords):
+                print(f"❌ 일본 주소 아님: {p.name} - {p.formatted_address}")
+                return False
+
+            # 모든 조건 통과
+            print(f"✓ 유효한 장소: {p.name}")
+            print(f"  - 주소: {p.formatted_address}")
+            print(f"  - 좌표: ({p.geometry.latitude}, {p.geometry.longitude})")
+            print(f"  - 이미지: {p.photos[0].url}")
+            return True
+
+        except Exception as e:
+            print(f"❌ 장소 검증 중 오류 발생 ({p.name if hasattr(p, 'name') else 'Unknown'}): {str(e)}")
             return False
-        address_lower = p.formatted_address.lower()
-        
-        # 일본 관련 키워드 포함 여부 확인
-        if not any(keyword in address_lower for keyword in ["日本", "japan", "일본"]):
-            return False
-            
-        # 한국 관련 키워드 제외
-        if any(keyword in address_lower for keyword in ["대한민국", "korea", "한국", "south korea", "republic of korea"]):
-            return False
-            
-        return True
 
     def _create_limited_result(self, content_infos: List[ContentInfo], place_details: List[PlaceInfo], processing_time: float) -> Dict:
         """결과 데이터 크기를 제한하여 생성"""
@@ -323,37 +337,47 @@ class YouTubeService:
     async def process_urls(self, urls: List[str]) -> Dict:
         """URL 목록을 처리하여 각각의 요약을 생성"""
         try:
+            print("\n[YouTubeService] process_urls 시작")
             content_infos = []
             place_details = []
             start_time = time.time()
 
             for url in urls:
+                print(f"\n[3.2] URL 처리: {url}")
                 # URL 처리 크기 제한 확인
                 if len(url.encode()) > self.MAX_CHUNK_SIZE:
-                    print(f"Warning: URL too long, skipping: {url[:100]}...")
+                    print(f"⚠️ [3.2.0] URL 길이 초과, 건너뜀: {url[:100]}...")
                     continue
 
                 parsed_url = urlparse(url)
+                print(f"[3.2.1] 콘텐츠 타입 감지 중...")
                 if 'youtube.com' in parsed_url.netloc:
+                    print("✓ YouTube 콘텐츠 감지")
                     await self._process_youtube_url(url, content_infos, place_details)
                 elif 'blog.naver.com' in parsed_url.netloc:
+                    print("✓ 네이버 블로그 콘텐츠 감지")
                     await self._process_naver_blog_url(url, content_infos, place_details)
 
             processing_time = time.time() - start_time
+            print(f"\n[3.2.7] 전체 처리 시간: {processing_time:.2f}초")
 
             # 결과 데이터 크기 제한
+            print("\n[3.2.8] 결과 데이터 생성 중...")
             result = self._create_limited_result(content_infos, place_details, processing_time)
+            print("✓ 결과 데이터 생성 완료")
             
             return result
 
         except Exception as e:
-            print(f"Error in process_urls: {str(e)}")
+            print(f"\n❌ [오류] URL 처리 중 오류 발생: {str(e)}")
             raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
 
     async def _process_youtube_url(self, url, content_infos, place_details):
         """YouTube URL 처리"""
+        print("\n[3.2.2] YouTube 정보 추출 중...")
         video_id = parse_qs(urlparse(url).query).get('v', [None])[0]
         if video_id:
+            print(f"✓ 비디오 ID 추출: {video_id}")
             video_info = self._get_video_info(video_id)
             content_info = ContentInfo(
                 url=url,
@@ -362,12 +386,16 @@ class YouTubeService:
                 platform=ContentType.YOUTUBE
             )
             content_infos.append(content_info)
+            print("✓ 비디오 기본 정보 추출 완료")
             
+            print("\n[3.2.3] 자막 및 장소 정보 처리 중...")
             video_places = self._process_youtube_video(video_id, url)
             place_details.extend(video_places)
+            print(f"✓ {len(video_places)}개의 장소 정보 추출 완료")
 
     async def _process_naver_blog_url(self, url, content_infos, place_details):
         """네이버 블로그 URL 처리"""
+        print("\n[3.2.2] 네이버 블로그 정보 추출 중...")
         title, author = self.content_service._get_naver_blog_info(url)
         content = self.content_service.process_content(url)
         
@@ -378,9 +406,12 @@ class YouTubeService:
             platform=ContentType.NAVER_BLOG
         )
         content_infos.append(content_info)
+        print("✓ 블로그 기본 정보 추출 완료")
         
+        print("\n[3.2.3] 본문 및 장소 정보 처리 중...")
         blog_places = self._process_naver_blog(url)
         place_details.extend(blog_places)
+        print(f"✓ {len(blog_places)}개의 장소 정보 추출 완료")
 
     def _process_youtube_video(self, video_id: str, source_url: str) -> List[PlaceInfo]:
         """YouTube 영상을 처리하여 장소 정보를 수집"""
