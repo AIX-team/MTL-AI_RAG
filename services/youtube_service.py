@@ -387,10 +387,16 @@ class YouTubeService:
                         place_name = place_info
                         area = "일본"
                     
-                    # Google Places API로 장소 정보 검색
-                    places_result = self.gmaps.places(f"{place_name} {area}")
+                    # Google Places API 검색 시 일본으로 제한
+                    places_result = self.gmaps.places(
+                        f"{place_name}",
+                        location=(35.6762, 139.6503),  # 도쿄 중심 좌표
+                        radius=1000000,  # 1000km 반경
+                        region="jp",  # 일본 지역으로 제한
+                        language="ja"  # 일본어 결과 우선
+                    )
                     if not places_result['results']:
-                        print(f"검색 결과 없음: {place_name} {area}")
+                        print(f"검색 결과 없음: {place_name}")
                         continue
                     
                     # 검색 결과가 있으면 첫 번째 결과로 진행
@@ -578,16 +584,31 @@ URL: {info.url}"""
 
         # 장소 필터링 조건 수정
         def is_valid_place(p):
-            # 1. 일본 주소 확인
-            if not p.formatted_address or not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
+            # 1. 일본 주소 더 엄격한 확인
+            if not p.formatted_address:
                 return False
             
-            # 2. 사진 URL 존재 확인 (null이 아님)
+            # 일본 주소 키워드 더 구체적으로 확인
+            japan_keywords = [
+                "日本", "Japan", "일본",
+                "東京都", "大阪府", "京都府", "神奈川県", "千葉県",  # 주요 도시/현
+                "-ku, ", "-shi, ", "-to, ", "-fu, ", "-ken, "  # 일본 주소 체계
+            ]
+            
+            if not any(keyword in p.formatted_address for keyword in japan_keywords):
+                return False
+            
+            # 2. 사진 URL 존재 확인
             if not p.photos or len(p.photos) == 0:
                 return False
             
-            # 3. 위도/경도 필수 확인
+            # 3. 위도/경도 범위 확인 (일본 영토 내)
             if not p.geometry or p.geometry.latitude is None or p.geometry.longitude is None:
+                return False
+            
+            # 일본 영토 대략적 범위
+            if not (20.0 <= p.geometry.latitude <= 46.0 and  # 위도 범위
+                    122.0 <= p.geometry.longitude <= 154.0):  # 경도 범위
                 return False
             
             return True
@@ -902,6 +923,57 @@ URL: {info.url}"""
         """PlaceService의 process_place_info를 호출"""
         return self.place_service.process_place_info(place_name, timestamp, description)
 
+    def search_place_details(self, place_name: str, area: str = None) -> Dict[str, Any]:
+        try:
+            gmaps = googlemaps.Client(key=os.getenv("GOOGLE_PLACES_API_KEY"))
+            
+            # 검색 파라미터 설정
+            search_params = {
+                'query': f"{place_name} {area if area else ''}",
+                'location': (35.6762, 139.6503),  # 도쿄 중심점
+                'radius': 1000000,  # 1000km
+                'region': 'jp',
+                'language': 'ja',
+                'type': ['tourist_attraction', 'point_of_interest']
+            }
+            
+            places_result = gmaps.places(**search_params)
+            
+            if not places_result['results']:
+                print(f"[search_place_details] 장소를 찾을 수 없음: {search_params}")
+                return None
+                
+            place = places_result['results'][0]
+            place_id = place['place_id']
+            
+            # 상세 정보 검색
+            details_result = gmaps.place(place_id, language='ko')
+            if not details_result.get('result'):
+                return None
+                
+            details = details_result['result']
+            
+            # 리뷰 정보 가져오기
+            reviews = details.get('reviews', [])
+            best_review = reviews[0]['text'] if reviews else None
+            
+            # 결과 딕셔너리 생성
+            return {
+                'name': details.get('name', ''),
+                'formatted_address': details.get('formatted_address', ''),
+                'rating': details.get('rating'),
+                'formatted_phone_number': details.get('formatted_phone_number', ''),
+                'website': details.get('website', ''),
+                'price_level': details.get('price_level'),
+                'opening_hours': details.get('opening_hours', {}).get('weekday_text', []),
+                'photos': details.get('photos', []),
+                'best_review': best_review
+            }
+            
+        except Exception as e:
+            print(f"[search_place_details] 장소 정보 검색 중 오류 발생 ({search_params}): {str(e)}")
+            return None
+
 class YouTubeSubtitleService:
     """YouTube 자막 및 비디오 정보 처리 서비스"""
     
@@ -1164,7 +1236,7 @@ class PlaceService:
                 'price_level': details.get('price_level'),
                 'opening_hours': details.get('opening_hours', {}).get('weekday_text', []),
                 'photos': details.get('photos', []),
-                'best_review': bestreview
+                'best_review': best_review
             }
             
         except Exception as e:
