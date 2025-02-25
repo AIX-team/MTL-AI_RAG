@@ -10,7 +10,7 @@ from math import ceil
 
 # 상수 정의
 CHUNK_SIZE = 2048  # 텍스트 청크 크기
-MODEL = "gpt-4o-mini"    # 사용할 GPT 모델
+MODEL = "gpt-4o"    # 사용할 GPT 모델
 MAX_TOKENS = 1500  # 최대 토큰 수
 
 class TravelPlannerService:
@@ -235,79 +235,3 @@ class TravelPlannerService:
         except (ValueError, TypeError):
             return 0.0
 
-class TextProcessingService:
-    """텍스트 처리 서비스"""
-    
-    @staticmethod
-    def split_text(text: str, max_chunk_size: int = CHUNK_SIZE) -> List[str]:
-        """텍스트를 청크로 분할"""
-        try:
-            words = text.split()
-            total_words = len(words)
-            num_chunks = ceil(total_words / (max_chunk_size // 5))
-            chunks = []
-            
-            for i in range(num_chunks):
-                start = i * (max_chunk_size // 5)
-                end = start + (max_chunk_size // 5)
-                chunk = ' '.join(words[start:end])
-                chunks.append(chunk)
-            
-            print(f"[split_text] 총 단어 수: {total_words}, 청크 수: {num_chunks}")
-            return chunks
-            
-        except Exception as e:
-            print(f"[split_text] 오류 발생: {str(e)}")
-            raise ValueError(f"텍스트 분할 중 오류 발생: {str(e)}")
-
-    @staticmethod
-    def _generate_prompt(text: str) -> str:
-        """GPT 프롬프트 생성"""
-        return f"""다음 텍스트를 분석하여 여행 정보를 요약해주세요. 
-특히 다음 사항에 중점을 두어 요약해주세요:
-
-1. 방문한 장소들 (위치 정보 포함)
-2. 각 장소의 특징과 설명
-3. 추천 사항이나 주의 사항
-4. 시간대별 방문 정보 (있는 경우)
-
-텍스트:
-{text}
-
-다음 형식으로 응답해주세요:
-
-방문한 장소: [장소명] ([지역명])
-- 설명: [장소에 대한 설명]
-- 추천 사항: [있는 경우]
-- 주의 사항: [있는 경우]
-- 방문 시간: [언급된 경우]
-"""
-
-    @staticmethod
-    def summarize_text(transcript_chunks: List[str], model: str = MODEL) -> str:
-        """텍스트 청크들을 요약"""
-        try:
-            summaries = []
-            for idx, chunk in enumerate(transcript_chunks):
-                print(f"[summarize_text] 청크 {idx+1}/{len(transcript_chunks)} 처리 중...")
-                
-                prompt = TextProcessingService._generate_prompt(chunk)
-                response = openai.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "당신은 여행 전문가로서 여행 컨텐츠를 분석하고 유용한 정보를 추출하는 AI입니다."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=MAX_TOKENS
-                )
-                
-                summary = response.choices[0].message.content
-                summaries.append(summary)
-                print(f"[summarize_text] 청크 {idx+1} 요약 완료")
-            
-            return "\n\n".join(summaries)
-            
-        except Exception as e:
-            print(f"[summarize_text] 오류 발생: {str(e)}")
-            raise ValueError(f"텍스트 요약 중 오류 발생: {str(e)}")

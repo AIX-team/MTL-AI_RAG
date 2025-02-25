@@ -33,7 +33,7 @@ print(f"Google Places API Key: {'설정됨' if GOOGLE_PLACES_API_KEY else '설�
 # 사용할 상수들
 MAX_URLS = 5  # 최대 URL 개수
 CHUNK_SIZE = 2048  # 각 텍스트 청크의 최대 토큰 수 (조정 가능)
-MODEL = "gpt-4o-mini"  # 사용할 OpenAI 모델
+MODEL = "gpt-4o"  # 사용할 OpenAI 모델
 FINAL_SUMMARY_MAX_TOKENS = 1500  # 최종 요약의 최대 토큰 수
 
 # -------------------

@@ -32,6 +32,29 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int, places_b
     balance_guide = ""
     if total_places < required_places:
         balance_guide = f"""
+
+[필수 규칙]
+1. 동선 최적화 (최우선 규칙)
+   - 같은 지역의 장소들을 하루에 묶어서 배치
+   - 이동 시간 최소화를 위해 근접한 장소끼리 순서 배치
+   - 지하철/버스 환승 횟수 최소화
+   - 하루 이동 거리 1시간 이내로 제한
+   - 지역 간 이동은 다음 날 일정으로 계획
+
+2. 일정 수 (스타일별)
+   - BUSY: 하루 4-5곳 방문
+   - NORMAL: 하루 3-4곳 방문
+   - RELAXED: 하루 2-3곳 방문
+
+   필수 주의사항:
+1. {plan_type.upper()} 스타일에 맞는 하루 방문 장소 수를 지켜주세요.
+2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
+3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
+4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
+5. 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요.
+6. 하루에 다른 지역을 이동하는 일정은 만들지 말것. 
+7. 유저가 선택한 장소중 하루에 다른 지역으로 넘어가거나 이동시간이 1시간 이상 걸리는 지역은 제외할것.   
+
 [장소 부족 상황 가이드]
 - 전체 필요 장소 수: {required_places}개
 - 현재 가용 장소 수: {total_places}개
@@ -95,26 +118,6 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int, places_b
     
     return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
 
-[필수 규칙]
-1. 동선 최적화 (최우선 규칙)
-   - 같은 지역의 장소들을 하루에 묶어서 배치
-   - 이동 시간 최소화를 위해 근접한 장소끼리 순서 배치
-   - 지하철/버스 환승 횟수 최소화
-   - 하루 이동 거리 3시간 이내로 제한
-   - 지역 간 이동은 다음 날 일정으로 계획
-
-   주의사항:
-1. {plan_type.upper()} 스타일에 맞는 하루 방문 장소 수를 지켜주세요.
-2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
-3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
-4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
-5. 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요.
-
-2. 일정 수 (스타일별)
-   - BUSY: 하루 4-5곳 방문
-   - NORMAL: 하루 3-4곳 방문
-   - RELAXED: 하루 2-3곳 방문
-
 {area_info}
 {balance_guide}
 
@@ -167,7 +170,7 @@ async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",  # 모델 변경
+            model="gpt-4o",  # 모델 변경
             messages=[
                 {
                     "role": "system",
