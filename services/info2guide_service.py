@@ -19,6 +19,7 @@ class TravelPlannerService:
         
     async def generate_travel_plans(self, places: List[PlaceInfo], days: int, plan_type: str) -> List[TravelPlan]:
         try:
+            # 일정 유형 매핑
             plan_type_mapping = {
                 '빼곡한 일정 선호': 'busy',
                 '적당한 일정 선호': 'normal',
@@ -28,26 +29,28 @@ class TravelPlannerService:
             if plan_type in plan_type_mapping:
                 plan_type = plan_type_mapping[plan_type]
             
-            # 지역 기반으로 장소 그룹핑
+            # 지역 기반 그룹핑
             places_by_area = self._group_places_by_area(places)
             
             # places를 딕셔너리로 변환
-            places_dict = {place.id: {
-                'id': place.id,
-                'title': place.title,
-                'address': place.address,
-                'description': place.description,
-                'intro': place.intro,
-                'type': place.type,
-                'image': place.image,
-                'latitude': place.latitude,
-                'longitude': place.longitude,
-                'open_hours': place.open_hours if hasattr(place, 'open_hours') else None,
-                'phone': place.phone if hasattr(place, 'phone') else None,
-                'rating': place.rating if hasattr(place, 'rating') else None,
-                'area_group': self._get_area_group(place, places_by_area)
-            } for place in places}
-
+            places_dict = {
+                place.id: {
+                    'id': place.id,
+                    'title': place.title,
+                    'address': place.address,
+                    'description': place.description,
+                    'intro': place.intro,
+                    'type': place.type,
+                    'image': place.image,
+                    'latitude': place.latitude,
+                    'longitude': place.longitude,
+                    'open_hours': place.open_hours if hasattr(place, 'open_hours') else None,
+                    'phone': place.phone if hasattr(place, 'phone') else None,
+                    'rating': place.rating if hasattr(place, 'rating') else None,
+                    'area_group': self._get_area_group(place, places_by_area)
+                } for place in places
+            }
+    
             prompt = info2guide_repository.create_travel_prompt(
                 list(places_dict.values()), 
                 plan_type, 
@@ -59,7 +62,7 @@ class TravelPlannerService:
             
             if not response or 'days' not in response:
                 print(f"No valid response for {plan_type} plan")
-                return self._create_default_plan(places, days, plan_type, places_by_area)
+                return []  # _create_default_plan 대신 빈 리스트 반환
             
             # GPT 응답 검증
             valid_response = self._validate_and_fix_gpt_response(
@@ -71,7 +74,7 @@ class TravelPlannerService:
             )
             
             if not valid_response['days']:
-                return self._create_default_plan(places, days, plan_type, places_by_area)
+                return []  # 마찬가지로 처리
             
             return [TravelPlan(
                 plan_type=plan_type,
@@ -80,7 +83,7 @@ class TravelPlannerService:
             
         except Exception as e:
             print(f"Error generating travel plans: {e}")
-            return self._create_default_plan(places, days, plan_type, places_by_area)
+            return []  # 예외 발생 시 빈 리스트 반환
 
     def _group_places_by_area(self, places: List[PlaceInfo]) -> dict:
         """위도/경도 기반으로 근접한 장소들을 그룹화"""
