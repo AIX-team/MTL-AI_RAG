@@ -40,7 +40,7 @@ GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 # 상수 설정
 MAX_URLS = 5
 CHUNK_SIZE = 2048
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-4o"
 FINAL_SUMMARY_MAX_TOKENS = 1500
 
 class ContentService:
@@ -255,45 +255,41 @@ class YouTubeService:
         except Exception as e:
             raise ValueError(f"Google Maps 클라이언트 초기화 실패: {str(e)}")
 
-    def _is_valid_place(self, p: PlaceInfo) -> bool:
-        """장소 필터링: 이미지, 좌표, 일본 주소 필수"""
+    async def process_urls(self, urls: List[str]) -> Dict:
+        """URL 목록을 처리하여 각각의 요약을 생성"""
         try:
-            # 1. 이미지 URL 검사
-            if not (p.photos and len(p.photos) > 0 and hasattr(p.photos[0], "url") and p.photos[0].url):
-                print(f"❌ 이미지 URL 누락: {p.name}")
-                return False
+            content_infos = []
+            place_details = []
+            final_summaries = {}  # 최종 요약을 저장할 딕셔너리
+            start_time = time.time()
 
-            # 2. 위도/경도 검사
-            if not (p.geometry and 
-                    hasattr(p.geometry, "latitude") and hasattr(p.geometry, "longitude") and
-                    p.geometry.latitude is not None and p.geometry.longitude is not None):
-                print(f"❌ 위도/경도 누락: {p.name}")
-                return False
+            for url in urls:
+                # URL 처리 크기 제한 확인
+                if len(url.encode()) > self.MAX_CHUNK_SIZE:
+                    print(f"Warning: URL too long, skipping: {url[:100]}...")
+                    continue
 
-            # 3. 일본 주소 검사
-            if not p.formatted_address:
-                print(f"❌ 주소 누락: {p.name}")
-                return False
+                parsed_url = urlparse(url)
+                if 'youtube.com' in parsed_url.netloc:
+                    await self._process_youtube_url(url, content_infos, place_details)
+                elif 'blog.naver.com' in parsed_url.netloc:
+                    await self._process_naver_blog_url(url, content_infos, place_details)
 
-            address_lower = p.formatted_address.lower()
-            japan_keywords = ["日本", "japan", "일본"]
+            processing_time = time.time() - start_time
+
+            # 결과 데이터 크기 제한
+            result = self._create_limited_result(content_infos, place_details, processing_time)
+                    
+            await self.repository.save_to_vectordb(final_summaries, content_infos, place_details)
             
-            if not any(keyword in address_lower for keyword in japan_keywords):
-                print(f"❌ 일본 주소 아님: {p.name} - {p.formatted_address}")
-                return False
-
-            # 모든 조건 통과
-            print(f"✓ 유효한 장소: {p.name}")
-            print(f"  - 주소: {p.formatted_address}")
-            print(f"  - 좌표: ({p.geometry.latitude}, {p.geometry.longitude})")
-            print(f"  - 이미지: {p.photos[0].url}")
-            return True
+            return result
 
         except Exception as e:
-            print(f"❌ 장소 검증 중 오류 발생 ({p.name if hasattr(p, 'name') else 'Unknown'}): {str(e)}")
-            return False
+            print(f"Error in process_urls: {str(e)}")
+            raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
 
-    def _create_limited_result(self, content_infos: List[ContentInfo], place_details: List[PlaceInfo], processing_time: float) -> Dict:
+
+    def _create_limited_result(self, content_infos, place_details, processing_time):
         """결과 데이터 크기를 제한하여 생성"""
         summaries = {}
         limited_place_details = []
@@ -307,7 +303,7 @@ class YouTubeService:
             
             summary = self._format_final_result(
                 content_infos=[info],
-                place_details=[p for p in place_details if self._is_valid_place(p)],
+                place_details=[p for p in place_details if p.source_url == info.url],
                 processing_time=processing_time,
                 urls=[info.url]
             )
@@ -317,9 +313,8 @@ class YouTubeService:
                 summaries[info.url] = summary
                 total_size += summary_size
         
-        # 장소 상세 정보 제한: 일본에 해당하는 장소만 추가
-        valid_places = [p for p in place_details if self._is_valid_place(p)]
-        for place in valid_places:
+        # 장소 상세 정보 제한
+        for place in place_details:
             place_size = len(str(place.dict()).encode())
             if total_size + place_size <= self.MAX_TOTAL_SIZE:
                 limited_place_details.append(place)
@@ -334,50 +329,10 @@ class YouTubeService:
             "place_details": [place.dict() for place in limited_place_details]
         }
 
-    async def process_urls(self, urls: List[str]) -> Dict:
-        """URL 목록을 처리하여 각각의 요약을 생성"""
-        try:
-            print("\n[YouTubeService] process_urls 시작")
-            content_infos = []
-            place_details = []
-            start_time = time.time()
-
-            for url in urls:
-                print(f"\n[3.2] URL 처리: {url}")
-                # URL 처리 크기 제한 확인
-                if len(url.encode()) > self.MAX_CHUNK_SIZE:
-                    print(f"⚠️ [3.2.0] URL 길이 초과, 건너뜀: {url[:100]}...")
-                    continue
-
-                parsed_url = urlparse(url)
-                print(f"[3.2.1] 콘텐츠 타입 감지 중...")
-                if 'youtube.com' in parsed_url.netloc:
-                    print("✓ YouTube 콘텐츠 감지")
-                    await self._process_youtube_url(url, content_infos, place_details)
-                elif 'blog.naver.com' in parsed_url.netloc:
-                    print("✓ 네이버 블로그 콘텐츠 감지")
-                    await self._process_naver_blog_url(url, content_infos, place_details)
-
-            processing_time = time.time() - start_time
-            print(f"\n[3.2.7] 전체 처리 시간: {processing_time:.2f}초")
-
-            # 결과 데이터 크기 제한
-            print("\n[3.2.8] 결과 데이터 생성 중...")
-            result = self._create_limited_result(content_infos, place_details, processing_time)
-            print("✓ 결과 데이터 생성 완료")
-            
-            return result
-
-        except Exception as e:
-            print(f"\n❌ [오류] URL 처리 중 오류 발생: {str(e)}")
-            raise ValueError(f"URL 처리 중 오류 발생: {str(e)}")
-
     async def _process_youtube_url(self, url, content_infos, place_details):
         """YouTube URL 처리"""
-        print("\n[3.2.2] YouTube 정보 추출 중...")
         video_id = parse_qs(urlparse(url).query).get('v', [None])[0]
         if video_id:
-            print(f"✓ 비디오 ID 추출: {video_id}")
             video_info = self._get_video_info(video_id)
             content_info = ContentInfo(
                 url=url,
@@ -386,16 +341,12 @@ class YouTubeService:
                 platform=ContentType.YOUTUBE
             )
             content_infos.append(content_info)
-            print("✓ 비디오 기본 정보 추출 완료")
             
-            print("\n[3.2.3] 자막 및 장소 정보 처리 중...")
             video_places = self._process_youtube_video(video_id, url)
             place_details.extend(video_places)
-            print(f"✓ {len(video_places)}개의 장소 정보 추출 완료")
 
     async def _process_naver_blog_url(self, url, content_infos, place_details):
         """네이버 블로그 URL 처리"""
-        print("\n[3.2.2] 네이버 블로그 정보 추출 중...")
         title, author = self.content_service._get_naver_blog_info(url)
         content = self.content_service.process_content(url)
         
@@ -406,12 +357,9 @@ class YouTubeService:
             platform=ContentType.NAVER_BLOG
         )
         content_infos.append(content_info)
-        print("✓ 블로그 기본 정보 추출 완료")
         
-        print("\n[3.2.3] 본문 및 장소 정보 처리 중...")
         blog_places = self._process_naver_blog(url)
         place_details.extend(blog_places)
-        print(f"✓ {len(blog_places)}개의 장소 정보 추출 완료")
 
     def _process_youtube_video(self, video_id: str, source_url: str) -> List[PlaceInfo]:
         """YouTube 영상을 처리하여 장소 정보를 수집"""
@@ -628,7 +576,25 @@ URL: {info.url}"""
         
         final_result += f"\n{'='*50}\n\n=== 장소별 상세 정보 ===\n\n"
 
-        for idx, place in enumerate(place_details, 1):
+        # 장소 필터링 조건 수정
+        def is_valid_place(p):
+            # 1. 일본 주소 확인
+            if not p.formatted_address or not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
+                return False
+            
+            # 2. 사진 URL 존재 확인 (null이 아님)
+            if not p.photos or len(p.photos) == 0:
+                return False
+            
+            # 3. 위도/경도 필수 확인
+            if not p.geometry or p.geometry.latitude is None or p.geometry.longitude is None:
+                return False
+            
+            return True
+        
+        valid_places = [p for p in place_details if is_valid_place(p)]
+        
+        for idx, place in enumerate(valid_places, 1):
             final_result += f"{idx}. {place.name}\n"
             final_result += "=" * 50 + "\n\n"
             final_result += f"주소: {place.formatted_address}\n"
@@ -640,7 +606,7 @@ URL: {info.url}"""
             final_result += "=" * 50 + "\n\n"
 
         return final_result
-
+    
     def search_content(self, query: str) -> List[Dict]:
         """벡터 DB에서 콘텐츠 검색"""
         try:
@@ -731,7 +697,7 @@ URL: {info.url}"""
                 # OpenAI를 사용하여 한국어로 번역
                 combined_text = " ".join(en_texts)
                 response = openai.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-4o",
                     messages=[
                         {"role": "system", "content": "You are a professional translator specializing in Korean travel content."},
                         {"role": "user", "content": f"Translate the following English text to Korean, maintaining the travel-related context:\n\n{combined_text}"}
@@ -871,8 +837,23 @@ URL: {info.url}"""
             # 장소별 상세 정보
             summary += "=== 장소별 상세 정보 ===\n\n"
             
-            # 유효한 장소만 필터링
-            valid_places = [p for p in place_details if self._is_valid_place(p)]
+            # Filtering valid places according to the criteria
+            def is_valid_place(p):
+                # 1. 일본 주소 확인
+                if not p.formatted_address or not any(keyword in p.formatted_address for keyword in ["日本", "Japan", "일본"]):
+                    return False
+                
+                # 2. 사진 URL 존재 확인 (null이 아님)
+                if not p.photos or len(p.photos) == 0:
+                    return False
+                
+                # 3. 위도/경도 필수 확인
+                if not p.geometry or p.geometry.latitude is None or p.geometry.longitude is None:
+                    return False
+                
+                return True
+            
+            valid_places = [p for p in place_details if is_valid_place(p)]
             
             for idx, place in enumerate(valid_places, 1):
                 summary += f"{idx}. {place.name}\n"
@@ -887,7 +868,7 @@ URL: {info.url}"""
             
             # 유효한 장소가 없는 경우 메시지 추가
             if not valid_places:
-                summary += "※ 유효한 일본 내 장소 정보가 없습니다.\n"
+                summary += "※ 유효한 장소 정보가 없습니다. (사진, 좌표, 일본 주소 중 하나 이상 누락)\n"
             
             summaries[content.url] = summary
         
@@ -903,7 +884,7 @@ URL: {info.url}"""
 반드시 짧고 명확한 한 문장으로 작성하세요."""
 
             response = openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "당신은 일본 전문 여행 가이드입니다. 장소에 대한 객관적이고 정확한 정보를 제공합니다."},
                     {"role": "user", "content": prompt}
@@ -1069,8 +1050,6 @@ class TextProcessingService:
 특히 다음 사항에 중점을 두어 요약해주세요:
 
 1. 방문한 장소들 (위치 정보 포함)
-   - 주의: 도시나 지역명(예: 도쿄, 오사카, 교토, 홋카이도 등)은 장소로 포함하지 마세요.
-   - 실제 방문 가능한 관광지, 식당, 숙소 등의 구체적인 장소만 포함해주세요.
 2. 각 장소의 특징과 설명
 3. 추천 사항이나 주의 사항
 4. 시간대별 방문 정보 (있는 경우)
@@ -1080,14 +1059,14 @@ class TextProcessingService:
 
 다음 형식으로 응답해주세요:
 
-방문한 장소: [구체적인 장소명] (위치: [소재지])
+방문한 장소: [장소명] ([지역명])
 - 설명: [장소에 대한 설명]
 - 추천 사항: [있는 경우]
 - 주의 사항: [있는 경우]
 - 방문 시간: [언급된 경우]
 """
 
-    def summarize_text(self, transcript_chunks: List[str], model: str = "gpt-4o-mini") -> str:
+    def summarize_text(self, transcript_chunks: List[str], model: str = "gpt-4o67") -> str:
         """텍스트 청크들을 요약"""
         try:
             summaries = []
