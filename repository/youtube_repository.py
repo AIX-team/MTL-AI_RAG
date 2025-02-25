@@ -11,12 +11,17 @@ import aiofiles
 import asyncio
 
 class YouTubeRepository:
-    def __init__(self, summary_dir: str = "./summaries"):
-        """
-        YouTubeRepository 초기화
-        Args:
-            summary_dir: 요약본을 저장할 디렉토리 경로 (기본값: "./summaries")
-        """
+    
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(YouTubeRepository, cls).__new__(cls)
+            cls._instance._init_once(*args, **kwargs)
+        return cls._instance
+    
+    def _init_once(self, summary_dir: str = "./summaries"):
+        """YouTubeRepository 초기화"""
         self.summary_dir = summary_dir
         os.makedirs(summary_dir, exist_ok=True)
         
@@ -45,7 +50,6 @@ class YouTubeRepository:
             
             print("✅ 벡터 DB 초기화 완료")
             
-            # 변경 후 코드:
             self.MAX_TOTAL_SIZE = 10485760  # 10MB
             
         except Exception as e:
@@ -55,6 +59,9 @@ class YouTubeRepository:
     async def save_to_vectordb(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo]) -> None:
         """벡터 DB에 최종 요약 저장"""
         try:
+            if self.vectordb is None:
+                raise ValueError("벡터 DB가 초기화되지 않았습니다.")
+            
             documents = []
             for content in content_infos:
                 summary = final_summaries.get(content.url, "요약 정보 없음")
@@ -65,13 +72,11 @@ class YouTubeRepository:
                     "platform": content.platform.value,
                     "type": "summary"
                 }
-                # None 값과 복잡한 객체 필터링
-                filtered_metadata = filter_complex_metadata(metadata)
+                filtered_metadata = filter_complex_metadata([Document(page_content=summary, metadata=metadata)])[0].metadata
                 documents.append(Document(page_content=summary, metadata=filtered_metadata))
             
-            # 장소 정보도 저장
             for place in place_details:
-                if place and place.description:  # None이 아닌 경우만 처리
+                if place and place.description:
                     metadata = {
                         "name": place.name,
                         "type": place.type if place.type else "unknown",
@@ -79,15 +84,10 @@ class YouTubeRepository:
                         "rating": float(place.rating) if place.rating else 0.0,
                         "source_url": place.source_url if place.source_url else ""
                     }
-                    # None 값과 복잡한 객체 필터링
-                    filtered_metadata = filter_complex_metadata(metadata)
-                    documents.append(Document(
-                        page_content=place.description,
-                        metadata=filtered_metadata
-                    ))
+                    filtered_metadata = filter_complex_metadata([Document(page_content=place.description, metadata=metadata)])[0].metadata
+                    documents.append(Document(page_content=place.description, metadata=filtered_metadata))
             
-            if documents:  # 문서가 있는 경우만 저장
-                # 비동기로 문서 추가
+            if documents:
                 await asyncio.get_event_loop().run_in_executor(
                     None, 
                     lambda: self.vectordb.add_documents(documents)

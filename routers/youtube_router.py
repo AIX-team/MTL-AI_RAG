@@ -87,7 +87,7 @@ async def process_content(request: ContentRequest):
 async def search_content(request: SearchRequest):
     """벡터 DB에서 콘텐츠 검색"""
     try:
-        results = await youtube_service.search_content(request.query)
+        results = youtube_service.search_content(request.query)
         return results
     except Exception as e:
         raise HTTPException(
