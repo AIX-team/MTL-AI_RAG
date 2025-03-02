@@ -1,11 +1,14 @@
 import os
 import datetime
 from typing import List, Dict
+from langchain_openai import OpenAIEmbeddings
+from langchain.chat_models import ChatOpenAI
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.schema import Document
 from langchain_community.vectorstores.utils import filter_complex_metadata
 from models.youtube_schemas import VideoInfo, PlaceInfo, ContentInfo
+import aiofiles
+import asyncio
 
 class YouTubeRepository:
     def __init__(self, summary_dir: str = "./summaries"):
@@ -17,19 +20,45 @@ class YouTubeRepository:
         self.summary_dir = summary_dir
         os.makedirs(summary_dir, exist_ok=True)
         
-        # 벡터 DB 초기화
-        self.embeddings = OpenAIEmbeddings()
-        self.vectordb = Chroma(
-            persist_directory="./chroma_db",
-            embedding_function=self.embeddings
-        )
+        try:
+            # OpenAI API 키 확인
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
-    def save_to_vectordb(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo]) -> None:
+            # LLM 모델 초기화
+            self.llm = ChatOpenAI(
+                temperature=0,
+                model_name="gpt-3.5-turbo",
+                openai_api_key=openai_api_key
+            )
+            
+            # Embeddings 초기화
+            self.embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+            
+            # ChromaDB 초기화
+            self.vectordb = Chroma(
+                persist_directory="./chroma_db",
+                embedding_function=self.embeddings,
+                collection_name="summaries"
+            )
+            
+            print("✅ 벡터 DB 초기화 완료")
+            
+            # 변경 후 코드:
+            self.MAX_TOTAL_SIZE = 10485760  # 10MB
+            
+        except Exception as e:
+            print(f"⚠️ 벡터 DB 초기화 실패: {str(e)}")
+            self.vectordb = None
+
+    async def save_to_vectordb(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo], place_details: List[PlaceInfo]) -> None:
         """벡터 DB에 최종 요약 저장"""
         try:
+            print("\n[3.3.1] 벡터 DB 저장 시작")
             documents = []
+            print("- 콘텐츠 요약 문서 생성 중...")
             for content in content_infos:
-                # final_summaries에 해당 URL의 요약이 없으면 기본값 사용
                 summary = final_summaries.get(content.url, "요약 정보 없음")
                 metadata = {
                     "url": content.url,
@@ -38,68 +67,84 @@ class YouTubeRepository:
                     "platform": content.platform.value,
                     "type": "summary"
                 }
-                documents.append(Document(page_content=summary, metadata=metadata))
+                # None 값과 복잡한 객체 필터링
+                filtered_metadata = filter_complex_metadata(metadata)
+                documents.append(Document(page_content=summary, metadata=filtered_metadata))
+            print(f"✓ {len(content_infos)}개의 콘텐츠 요약 문서 생성 완료")
             
-            # 벡터 DB에 저장 (빈 리스트여도 add_documents 호출)
-            self.vectordb.add_documents(documents)
-            print(f"✅ 벡터 DB 저장 완료: {len(documents)}개 문서")
+            print("\n[3.3.2] 장소 정보 문서 생성 중...")
+            # 장소 정보도 저장
+            for place in place_details:
+                if place and place.description:  # None이 아닌 경우만 처리
+                    metadata = {
+                        "name": place.name,
+                        "type": place.type if place.type else "unknown",
+                        "address": place.formatted_address if place.formatted_address else "",
+                        "rating": float(place.rating) if place.rating else 0.0,
+                        "source_url": place.source_url if place.source_url else ""
+                    }
+                    # None 값과 복잡한 객체 필터링
+                    filtered_metadata = filter_complex_metadata(metadata)
+                    documents.append(Document(
+                        page_content=place.description,
+                        metadata=filtered_metadata
+                    ))
+            print(f"✓ {len(place_details)}개의 장소 정보 문서 생성 완료")
+            
+            if documents:  # 문서가 있는 경우만 저장
+                print("\n[3.3.3] 벡터 DB에 문서 저장 중...")
+                # 비동기로 문서 추가
+                await asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    lambda: self.vectordb.add_documents(documents)
+                )
+                print(f"✓ 벡터 DB 저장 완료: 총 {len(documents)}개 문서")
+            
         except Exception as e:
-            print(f"벡터 DB 저장 중 오류 발생: {str(e)}")
-            raise Exception(f"벡터 DB 저장 중 오류가 발생했습니다: {str(e)}")
+            print(f"\n❌ [오류] 벡터 DB 저장 중 오류 발생: {str(e)}")
+            raise
+
+    async def save_final_summary(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo]) -> List[str]:
+        """URL별로 최종 요약을 파일로 저장하고 파일 경로 리스트 반환"""
+        print("\n[3.3.4] 최종 요약 파일 저장 시작")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        saved_paths = []
+        
+        for content in content_infos:
+            try:
+                file_name = f"final_summary_{content.platform.value}_{timestamp}.txt"
+                file_path = os.path.join(self.summary_dir, file_name)
+                
+                print(f"- 요약 파일 저장 중: {file_name}")
+                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                    summary = final_summaries.get(content.url, "요약 정보 없음")
+                    await f.write(summary)
+                
+                saved_paths.append(file_path)
+                print(f"✓ 요약 파일 저장 완료: {file_path}")
+                
+            except Exception as e:
+                print(f"❌ 파일 저장 중 오류 발생: {str(e)}")
+                continue
+        
+        print(f"✓ 총 {len(saved_paths)}개의 요약 파일 저장 완료")
+        return saved_paths
 
     def query_vectordb(self, query: str, k: int = 3) -> List[Document]:
         """벡터 DB에서 검색"""
         try:
             results = self.vectordb.similarity_search(query, k=k)
-            
-            # 검색된 결과 확인
-            for doc in results:
-                if not isinstance(doc, Document):
-                    print(f"⚠️ 검색 결과에 잘못된 데이터 포함됨: {type(doc)} - {doc}")
-            
             return [doc for doc in results if isinstance(doc, Document)]
         except Exception as e:
             print(f"벡터 DB 검색 중 오류 발생: {str(e)}")
             return []
-    
+
     def save_chunks(self, chunks: List[str]) -> None:
         """텍스트 청크들을 파일로 저장"""
         for idx, chunk in enumerate(chunks, 1):
             file_path = os.path.join(self.chunks_dir, f"chunk_{idx}.txt")
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(chunk)
-
-    def save_final_summary(self, final_summaries: Dict[str, str], content_infos: List[ContentInfo]) -> List[str]:
-        """URL별로 최종 요약을 파일로 저장하고 파일 경로 리스트 반환"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        saved_paths = []
-        
-        for idx, content in enumerate(content_infos, 1):
-            # URL의 플랫폼 타입과 인덱스를 파일명에 포함
-            platform_type = content.platform.value
-            file_name = f"final_summary_{platform_type}_{idx}_{timestamp}.txt"
-            file_path = os.path.join(self.summary_dir, file_name)
-            
-            with open(file_path, "w", encoding="utf-8") as f:
-                # 해당 URL에 대한 요약 정보만 추출하여 저장
-                header = f"""=== {platform_type.upper()} 콘텐츠 요약 ===
-URL: {content.url}
-제목: {content.title}
-작성자: {content.author}
-==================================================\n"""
-                f.write(header)
-                
-                # 해당 URL의 요약 내용만 저장
-                if content.url in final_summaries:
-                    summary_content = final_summaries[content.url]
-                    if isinstance(summary_content, dict):
-                        summary_content = str(summary_content)  # 딕셔너리인 경우 문자열로 변환
-                    f.write(summary_content)
-            
-            saved_paths.append(file_path)
-            print(f"✅ 요약본 저장 완료: {file_path}")
-        
-        return saved_paths 
 
     def save_place_details(self, place_details: List[PlaceInfo]) -> List[Document]:
         """장소 정보를 벡터 DB에 저장하고 필터링된 장소만 반환"""
@@ -207,3 +252,5 @@ URL: {content.url}
             search_results.append(result)
         
         return search_results 
+
+    

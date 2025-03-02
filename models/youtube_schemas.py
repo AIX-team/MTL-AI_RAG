@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Union, Any
 from enum import Enum
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, Field
 
 class ContentType(str, Enum):
     YOUTUBE = "youtube"
@@ -11,7 +11,7 @@ class ContentType(str, Enum):
     UNKNOWN = "unknown"
 
 class ContentRequest(BaseModel):
-    urls: List[HttpUrl]
+    urls: List[str]
 
 class ContentInfo(BaseModel):
     url: str
@@ -53,12 +53,20 @@ class PlaceInfo(BaseModel):
     recommendations: Optional[List[str]] = None
 
 class YouTubeResponse(BaseModel):
-    summary: Dict[str, Any]
-    content_infos: List[ContentInfo]
-    processing_time_seconds: float
-    place_details: List[PlaceInfo]
+    summary: Dict[str, str] = Field(default_factory=dict)
+    content_infos: List[Dict] = Field(default_factory=list)
+    processing_time_seconds: float = Field(default=0.0)
+    place_details: List[Dict] = Field(default_factory=list)
 
-    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "summary": {"url": "요약 내용"},
+                "content_infos": [],
+                "processing_time_seconds": 1.23,
+                "place_details": []
+            }
+        }
 
 class SearchResponse(BaseModel):
     """검색 결과 응답 모델"""

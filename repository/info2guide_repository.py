@@ -2,17 +2,32 @@
 
 import openai
 from typing import List, Dict
+from models.info2guide_model import PlaceInfo, PlaceDetail, DayPlan, TravelPlan
 import json
 
-def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
+def create_travel_prompt(places: List[Dict], plan_type: str, days: int, places_by_area: dict = None) -> str:
     """GPT 프롬프트 생성 (ID와 Address 정보 포함)"""
     total_places = len(places)
     places_per_day = {
-        'busy': 4,
-        'normal': 3,
-        'relaxed': 2
+        'busy': (4, 5),
+        'normal': (3, 4),
+        'relaxed': (2, 3)
     }
-    required_places = days * places_per_day[plan_type.lower()]
+    min_places, max_places = places_per_day[plan_type.lower()]
+    required_places = days * min_places
+    
+    # 지역 정보 문자열 생성
+    area_info = ""
+    if places_by_area:
+        area_info = "\n[지역 그룹 정보]\n"
+        for area_id, area_places in places_by_area.items():
+            center = area_places[0]
+            area_info += (
+                f"지역 {area_id}:\n"
+                f"중심 위치: {center.address}\n"
+                f"포함 장소: {', '.join(p.title for p in area_places)}\n"
+                f"좌표: ({center.latitude}, {center.longitude})\n\n"
+            )
     
     balance_guide = ""
     if total_places < required_places:
@@ -39,8 +54,7 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
   2. 선정 제외 기준:
      - 유사한 성격의 중복 장소
      - 이동 시간이 긴 원거리 장소
-     - 방문 소요 시간이 너무 짧은 장소
-  3. 제외된 장소는 '추천 대체 장소' 목록으로 별도 제공"""
+     - 방문 소요 시간이 너무 짧은 장소"""
     
     place_details = "\n".join([
         f"Place {i+1}:\n"
@@ -55,31 +69,54 @@ def create_travel_prompt(places: List[Dict], plan_type: str, days: int) -> str:
         for i, place in enumerate(places)
     ])
     
+    style_description = {
+        'busy': """
+[빼곡한 일정 선호 상세]
+- 하루 4곳 방문
+- 장소당 체류시간: 1-1.5시간
+- 이동시간: 30분 이내
+- 효율적인 동선 중시
+- 주요 관광지 위주""",
+        'normal': """
+[적당한 일정 선호 상세]
+- 하루 3곳 방문
+- 장소당 체류시간: 1.5-2시간
+- 이동시간: 40분 이내
+- 관광과 휴식 균형
+- 대중적인 코스""",
+        'relaxed': """
+[널널한 일정 선호 상세]
+- 하루 2곳 방문
+- 장소당 체류시간: 2-3시간
+- 이동시간: 제한 없음
+- 여유로운 일정
+- 문화체험 중심"""
+    }
+    
     return f"""당신은 전문 여행 플래너입니다. 현재 요청받은 {plan_type.upper()} 스타일의 여행 일정을 반드시 생성해주세요.
 
+[필수 규칙]
+1. 동선 최적화 (최우선 규칙)
+   - 같은 지역의 장소들을 하루에 묶어서 배치
+   - 이동 시간 최소화를 위해 근접한 장소끼리 순서 배치
+   - 지하철/버스 환승 횟수 최소화
+   - 하루 이동 거리 3시간 이내로 제한
+   - 지역 간 이동은 다음 날 일정으로 계획
+
+   주의사항:
+1. {plan_type.upper()} 스타일에 맞는 하루 방문 장소 수를 지켜주세요.
+2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
+3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
+4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
+5. 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요.
+
+2. 일정 수 (스타일별)
+   - BUSY: 하루 4-5곳 방문
+   - NORMAL: 하루 3-4곳 방문
+   - RELAXED: 하루 2-3곳 방문
+
+{area_info}
 {balance_guide}
-
-[여행 스타일 정의]
-1. BUSY 스타일:
-   - 목적: 제한된 시간에 최대한 많은 곳을 경험
-   - 하루 방문 장소: 4곳
-   - 장소당 체류 시간: 1-1.5시간
-   - 이동 시간: 장소 간 30분 이내
-   - 특징: 효율적인 동선, 주요 관광지 위주
-
-2. NORMAL 스타일:
-   - 목적: 여유있게 주요 관광지 방문
-   - 하루 방문 장소: 3곳
-   - 장소당 체류 시간: 1.5-2시간
-   - 이동 시간: 장소 간 40분 이내
-   - 특징: 관광과 휴식 균형, 대중적인 코스, 효율적인 동선
-
-3. RELAXED 스타일:
-   - 목적: 각 장소를 충분히 음미
-   - 하루 방문 장소: 2곳
-   - 장소당 체류 시간: 2-3시간
-   - 이동 시간: 제한 없음
-   - 특징: 여유로운 일정, 문화 체험 중심
 
 [일정 수립 규칙]
 1. 시간대별 최적화:
@@ -118,26 +155,19 @@ Place Image URL: [이미지 URL]
 Business Time: [영업 시간]
 Website: [웹사이트 URL]
 Location: [위도, 경도]
-Recommended Visit Time: [권장 방문 시간]
-Expected Duration: [예상 소요 시간]
 
 [다음 장소...]
 
 Day 2:
 [같은 형식 반복]
 
-주의사항:
-1. {plan_type.upper()} 스타일에 맞는 하루 방문 장소 수를 지켜주세요.
-2. 각 장소의 실제 위치와 영업시간을 고려해 현실적인 일정을 작성해주세요.
-3. 이동 시간과 체류 시간을 고려하여 하루 일정이 무리하지 않도록 해주세요.
-4. 주어진 장소들의 특성을 고려하여 최적의 방문 순서를 정해주세요.
-5. 최대한 같은 지역에 있는 장소들을 방문하도록 해주세요."""
+"""
+
 async def get_gpt_response(prompt: str) -> Dict:
     try:
         print("Sending request to GPT...")
-        # 올바른 메서드 사용: openai.ChatCompletion.create
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o-mini",  # 모델 변경
             messages=[
                 {
                     "role": "system",
@@ -146,7 +176,7 @@ async def get_gpt_response(prompt: str) -> Dict:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=3000,
+            max_tokens=8192,
             presence_penalty=0.0,
             frequency_penalty=0.0
         )
@@ -161,8 +191,9 @@ async def get_gpt_response(prompt: str) -> Dict:
     except Exception as e:
         print(f"Error in get_gpt_response: {str(e)}")
         return {'days': []}
+
 def parse_gpt_response(response_text: str) -> Dict:
-    """GPT 응답을 파싱하여 구조화된 데이터로 변환 (ID와 Address 포함)"""
+    """GPT 응답을 파싱하여 구조화된 데이터로 변환"""
     try:
         print("Starting to parse response...")
         days = []
@@ -179,8 +210,6 @@ def parse_gpt_response(response_text: str) -> Dict:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         
         for line in lines:
-            print(f"Processing line: {line}")
-            # Day 시작 감지
             if line.lower().startswith('day'):
                 if current_place and current_day:
                     current_day['places'].append(current_place)
@@ -189,18 +218,15 @@ def parse_gpt_response(response_text: str) -> Dict:
                 try:
                     day_num = int(''.join(filter(str.isdigit, line)))
                     current_day = {'day_number': day_num, 'places': []}
-                    print(f"Created new day: {day_num}")
                 except Exception as e:
                     print(f"Error parsing day number: {e}")
                 current_place = None
                 continue
             
-            # ':'가 포함된 라인 처리
             if ':' in line:
                 key, value = [x.strip() for x in line.split(':', 1)]
                 key = key.lower().replace(' ', '_')
                 
-                # current_place가 None이면 자동 생성
                 if current_place is None:
                     current_place = {
                         'id': '',
@@ -216,9 +242,7 @@ def parse_gpt_response(response_text: str) -> Dict:
                         'latitude': '',
                         'longitude': ''
                     }
-                    print("Auto-created new place due to missing Place Name trigger.")
                 
-                # 키에 따른 값 할당
                 if key == 'id':
                     current_place['id'] = value
                 elif key == 'place_name':
@@ -248,7 +272,6 @@ def parse_gpt_response(response_text: str) -> Dict:
                         print(f"Error parsing location: {e}")
                         current_place['latitude'] = ''
                         current_place['longitude'] = ''
-                print(f"Set {key} = {value}")
         
         if current_place and current_day:
             current_day['places'].append(current_place)
@@ -261,5 +284,28 @@ def parse_gpt_response(response_text: str) -> Dict:
         print(f"Error parsing GPT response: {str(e)}")
         print(f"Response text: {response_text}")
         return {'days': []}
+
+def is_valid_place(p):
+    # 사진 정보가 존재해야 하며, 기본 이미지(예: 'placehold', 'no+image' 등)가 아니어야 합니다
+    if not (p.photos and len(p.photos) > 0):
+        return False
+    first_photo = p.photos[0].url if (p.photos[0] and getattr(p.photos[0], 'url', '')) else ""
+    if not first_photo or "placehold" in first_photo.lower() or "no+image" in first_photo.lower():
+        return False
+    
+    # 주소 정보가 있어야 합니다
+    if not (p.formatted_address and p.formatted_address.strip()):
+        return False
+    address = p.formatted_address.lower()
+    
+    # 주소에 반드시 일본 관련 키워드가 포함되어 있어야 합니다
+    if not any(keyword in address for keyword in ["japan", "일본", "日本"]):
+        return False
+    
+    # 한국 관련 키워드가 포함되어 있으면 안 됩니다
+    if any(keyword in address for keyword in ["korea", "대한민국", "south korea", "republic of korea", "서울", "한국"]):
+        return False
+    
+    return True
 
 
